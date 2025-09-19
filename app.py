@@ -1,11 +1,8 @@
 # app.py — Conecta Senac • Aprendiz
-# - Lê OpenAI/Tavily de st.secrets (com fallback a env)
-# - Importes tolerantes (mensagens claras na sidebar se faltar pacote)
-# - Conversa natural com foco no Senac (sem restrições bruscas)
-# - Pesquisa web só quando fizer sentido (Tavily → DDGS)
-# - Saída JSON salva em /respostas ({"emotion":"feliz|neutro","content":"..."})
-# - STT (streamlit-mic-recorder) se disponível; fallback Web Speech API
-# - UI com form correto (sem st.button dentro de st.form) e st.rerun
+# Conversa natural focada no Senac; pesquisa web só quando fizer sentido.
+# Lê OPENAI_API_KEY e TAVILY_API_KEY de st.secrets (com fallback para variáveis de ambiente).
+# Microfone: usa streamlit-mic-recorder se instalado; caso contrário, fallback Web Speech API (Chrome/Edge).
+# Saída do LLM em JSON {"emotion":"feliz|neutro","content":"..."} e salva em /respostas.
 
 import os
 import re
@@ -52,7 +49,12 @@ FAVICON_ICO = os.path.join(ASSETS_DIR, "favicon.ico")
 FAVICON_PNG = os.path.join(ASSETS_DIR, "favicon.png")
 PAGE_ICON = _first_existing(FAVICON_ICO, FAVICON_PNG) or "🎓"
 
-st.set_page_config(page_title=APP_TITLE, page_icon=PAGE_ICON, layout="centered", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title=APP_TITLE,
+    page_icon=PAGE_ICON,
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
 _rerun = (st.rerun if hasattr(st, "rerun") else st.experimental_rerun)
 
 # =========================
@@ -74,7 +76,6 @@ API_KEY = os.getenv("OPENAI_API_KEY") or _get_secret("openai", "api_key")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL") or _get_secret("openai", "model", default="gpt-4o-mini")
 TAVILY_KEY = os.getenv("TAVILY_API_KEY") or _get_secret("tavily", "api_key")
 
-# OpenAI (tolerante)
 llm_provider = None
 llm_client = None
 if API_KEY:
@@ -102,12 +103,66 @@ try:
 except Exception:
     HAS_STT = False
 
+# =========================
+# FALLBACK WEB SPEECH API (definido ANTES do uso)
+# =========================
+def webspeech_button(key: str = "stt_web1", label_start="🎤 Falar", label_stop="⏹️ Parar"):
+    html = f"""
+    <div id="{key}_wrap">
+      <button id="{key}_btn" style="width:100%; height:38px; border-radius:8px; border:1px solid #ccc; cursor:pointer;">
+        {label_start}
+      </button>
+    </div>
+    <script>
+      const btn = document.getElementById("{key}_btn");
+      let rec = null; let listening = false;
+
+      function sendToStreamlit(text) {{
+        window.parent.postMessage({{
+          isStreamlitMessage: true,
+          type: "SET_COMPONENT_VALUE",
+          key: "{key}_value",
+          value: text
+        }}, "*");
+      }}
+
+      btn.onclick = () => {{
+        if (!('webkitSpeechRecognition' in window)) {{
+          alert('Seu navegador não suporta reconhecimento de voz (use Chrome/Edge).');
+          return;
+        }}
+        if (!listening) {{
+          rec = new webkitSpeechRecognition();
+          rec.lang = 'pt-BR';
+          rec.continuous = false;
+          rec.interimResults = false;
+          rec.onstart = () => {{ listening = true; btn.innerText = "{label_stop}"; }};
+          rec.onerror = () => {{ listening = false; btn.innerText = "{label_start}"; }};
+          rec.onend = () => {{ listening = false; btn.innerText = "{label_start}"; }};
+          rec.onresult = (e) => {{
+            const text = e.results[0][0].transcript;
+            sendToStreamlit(text);
+          }};
+          rec.start();
+        }} else {{
+          try {{ rec.stop(); }} catch (e) {{}}
+          listening = false;
+          btn.innerText = "{label_start}";
+        }}
+      }};
+    </script>
+    """
+    components.html(html, height=50, key=key)
+    val = st.session_state.get(f"{key}_value")
+    if f"{key}_value" in st.session_state:
+        del st.session_state[f"{key}_value"]
+    return val
 
 # =========================
 # ESTADO
 # =========================
 if "hist" not in st.session_state:
-    # (quem, texto, emocao, fontes)
+    # cada item: (quem, texto, emocao, fontes)
     st.session_state.hist: List[Tuple] = [
         ("bot",
          "Olá! Eu sou o **Aprendiz**, do **Conecta Senac**. Posso conversar sobre cursos, inscrições, EAD, unidades e também sobre como eu funciono. Como posso te ajudar?",
@@ -142,7 +197,7 @@ def avatar_img(emocao: str) -> str:
     return f"<img class='avatar-img' src='data:image/png;base64,{b64img}' alt='{emocao}'/>" if b64img else "<div class='avatar-emoji'>🎓</div>"
 
 # =========================
-# SIDEBAR
+# SIDEBAR (preferências)
 # =========================
 with st.sidebar:
     st.header("⚙️ Preferências")
@@ -151,14 +206,12 @@ with st.sidebar:
     st.session_state.stt_enabled = st.toggle("🎤 Entrada por voz (microfone)", value=st.session_state.stt_enabled)
     st.session_state.font_size = st.slider("♿ Tamanho da fonte", 1.0, 1.5, st.session_state.font_size, 0.05)
     temp = st.slider("Criatividade (temperature)", 0.0, 1.0, 0.35, 0.05)
+    st.session_state["temperature"] = temp  # consistente entre reruns
     web_toggle = st.toggle("🔎 Ativar pesquisa web quando fizer sentido", value=True)
     st.caption(f"LLM: {'OpenAI' if llm_provider=='openai' else '⚠️ não configurado'}")
     st.caption(f"Busca: {'Tavily' if TAVILY_KEY else ('DDGS' if DDGS else '⚠️ indisponível')}")
-    # Diagnóstico rápido
-    import sys
-    st.caption(f"Python: {sys.executable}")
     if st.session_state.stt_enabled and not HAS_STT:
-        st.caption("🎤 Fallback: Web Speech API (Chrome/Edge em localhost)")
+        st.caption("🎤 Usando fallback Web Speech API (Chrome/Edge). Para melhor suporte: `pip install streamlit-mic-recorder`.")
 
 # =========================
 # TEMA / CSS
@@ -235,7 +288,7 @@ for i, texto in enumerate(SUGESTOES):
         _rerun()
 
 # =========================
-# ESCOPO SUAVE
+# ESCOPO SUAVE (foco no Senac, sem ser grosseiro)
 # =========================
 SENAC_TERMS = ["senac","senac rs","senacrs","senac.br","senacrs.com.br","curso","cursos","matrícula","matricula","inscrição","inscricao","unidade","unidades","ead","mensalidade","bolsa","certificado","grade","carga","conecta senac","aprendiz"]
 SMALLTALK_TERMS = ["aprendiz","conecta senac","assistente","ia","chatbot","sobre você","quem é você","como funciona","privacidade","dados","projeto"]
@@ -289,51 +342,6 @@ def web_search(query: str, max_results: int = 6):
         return hits
     except Exception:
         return []
-
-# =========================
-# BARRA DE ENTRADA (chat_input + MIC)
-# =========================
-st.markdown("<div class='input-bar'></div>", unsafe_allow_html=True)
-
-# Linha do microfone acima do chat_input
-mic_txt = None
-mic_row = st.container()
-with mic_row:
-    c_mic, c_hint = st.columns([0.18, 0.82])
-    with c_mic:
-        if st.session_state.stt_enabled:
-            if HAS_STT:
-                # Componente nativo (streamlit-mic-recorder)
-                mic_txt = speech_to_text(
-                    language="pt-BR",
-                    start_prompt="🎤 Falar",
-                    stop_prompt="⏹️ Parar",
-                    just_once=True,
-                    use_container_width=True,
-                    key="stt_inline_top",
-                )
-            else:
-                # Fallback Web Speech API (corrigido: sem 'scrolling')
-                mic_txt = webspeech_button(key="stt_web_top", label_start="🎤 Falar", label_stop="⏹️ Parar")
-        else:
-            st.markdown("<div class='fake-mic'>🎤 microfone off</div>", unsafe_allow_html=True)
-    with c_hint:
-        st.caption("Dica: você pode falar pelo microfone e eu transcrevo aqui.")
-
-# Campo fixo no rodapé
-user_msg = st.chat_input("Digite sua mensagem…")
-
-# Prioridade: fala → texto digitado
-msg = None
-if isinstance(mic_txt, str) and mic_txt.strip():
-    msg = mic_txt.strip()
-elif user_msg and user_msg.strip():
-    msg = user_msg.strip()
-
-if msg:
-    st.session_state.hist.append(("user", msg, None, None))
-    st.session_state.hist.append(("typing", "digitando...", "pensando", None))
-    _rerun()
 
 # =========================
 # PROMPTS / LLM (sempre JSON)
@@ -546,63 +554,49 @@ if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
     _rerun()
 
 # =========================
-# Fallback Web Speech API (se não houver st_mic_recorder)
+# BARRA DE ENTRADA (chat_input + MIC)
 # =========================
-def webspeech_button(key: str = "stt_web1", label_start="🎤 Falar", label_stop="⏹️ Parar"):
-    html = f"""
-    <div id="{key}_wrap">
-      <button id="{key}_btn" style="width:100%; height:38px; border-radius:8px; border:1px solid #ccc; cursor:pointer;">
-        {label_start}
-      </button>
-    </div>
-    <script>
-      const btn = document.getElementById("{key}_btn");
-      let rec = null; let listening = false;
+st.markdown("<div class='input-bar'></div>", unsafe_allow_html=True)
 
-      function sendToStreamlit(text) {{
-        window.parent.postMessage({{
-          isStreamlitMessage: true,
-          type: "SET_COMPONENT_VALUE",
-          key: "{key}_value",
-          value: text
-        }}, "*");
-      }}
+# Linha do microfone acima do chat_input
+mic_txt = None
+mic_row = st.container()
+with mic_row:
+    c_mic, c_hint = st.columns([0.18, 0.82])
+    with c_mic:
+        if st.session_state.stt_enabled:
+            if HAS_STT:
+                # Componente nativo (streamlit-mic-recorder)
+                mic_txt = speech_to_text(
+                    language="pt-BR",
+                    start_prompt="🎤 Falar",
+                    stop_prompt="⏹️ Parar",
+                    just_once=True,
+                    use_container_width=True,
+                    key="stt_inline_top",
+                )
+            else:
+                # Fallback Web Speech API
+                mic_txt = webspeech_button(key="stt_web_top", label_start="🎤 Falar", label_stop="⏹️ Parar")
+        else:
+            st.markdown("<div class='fake-mic'>🎤 microfone off</div>", unsafe_allow_html=True)
+    with c_hint:
+        st.caption("Dica: você pode falar pelo microfone e eu transcrevo aqui.")
 
-      btn.onclick = () => {{
-        if (!('webkitSpeechRecognition' in window)) {{
-          alert('Seu navegador não suporta reconhecimento de voz (use Chrome/Edge em localhost).');
-          return;
-        }}
-        if (!listening) {{
-          rec = new webkitSpeechRecognition();
-          rec.lang = 'pt-BR';
-          rec.continuous = false;
-          rec.interimResults = false;
-          rec.onstart = () => {{ listening = true; btn.innerText = "{label_stop}"; }};
-          rec.onerror = () => {{ listening = false; btn.innerText = "{label_start}"; }};
-          rec.onend = () => {{ listening = false; btn.innerText = "{label_start}"; }};
-          rec.onresult = (e) => {{
-            const text = e.results[0][0].transcript;
-            sendToStreamlit(text);
-          }};
-          rec.start();
-        }} else {{
-          try {{ rec.stop(); }} catch (e) {{}}
-          listening = false;
-          btn.innerText = "{label_start}";
-        }}
-      }};
-    </script>
-    """
-    # ⚠️ Removido o argumento `scrolling`
-    components.html(html, height=50, key=key)
-    # Lê o valor que o JS enviou
-    val = st.session_state.get(f"{key}_value")
-    # limpa para não reutilizar no próximo rerun
-    if f"{key}_value" in st.session_state:
-        del st.session_state[f"{key}_value"]
-    return val
+# Campo fixo no rodapé
+user_msg = st.chat_input("Digite sua mensagem…")
 
+# Prioridade: fala → texto digitado
+msg = None
+if isinstance(mic_txt, str) and mic_txt.strip():
+    msg = mic_txt.strip()
+elif user_msg and user_msg.strip():
+    msg = user_msg.strip()
+
+if msg:
+    st.session_state.hist.append(("user", msg, None, None))
+    st.session_state.hist.append(("typing", "digitando...", "pensando", None))
+    _rerun()
 
 # =========================
 # RODAPÉ
@@ -615,6 +609,3 @@ with c1:
         _rerun()
 with c2:
     st.caption("Aprendiz — conversa natural, foco no Senac e no que importa pra você.")
-
-
-
