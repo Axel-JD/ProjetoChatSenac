@@ -1,8 +1,10 @@
-# app.py — Conecta Senac • Aprendiz
-# Conversa natural focada no Senac; pesquisa web só quando fizer sentido.
-# Lê OPENAI_API_KEY e TAVILY_API_KEY de st.secrets (com fallback para variáveis de ambiente).
-# Microfone: usa streamlit-mic-recorder se instalado; caso contrário, fallback Web Speech API (Chrome/Edge).
-# Saída do LLM em JSON {"emotion":"feliz|neutro","content":"..."} e salva em /respostas.
+# app.py — Conecta Senac • Aprendiz (estável p/ Streamlit Cloud)
+# - Lê OpenAI/Tavily de st.secrets (com fallback a env)
+# - Conversa natural com foco no Senac (sem restrições bruscas)
+# - Pesquisa web só quando fizer sentido (Tavily → DDGS)
+# - Saída JSON salva em /respostas ({"emotion":"feliz|neutro","content":"..."} )
+# - STT via streamlit-mic-recorder (se instalado); sem fallback WebSpeech (evita erro em Cloud)
+# - UI com form correto e st.rerun
 
 import os
 import re
@@ -49,12 +51,8 @@ FAVICON_ICO = os.path.join(ASSETS_DIR, "favicon.ico")
 FAVICON_PNG = os.path.join(ASSETS_DIR, "favicon.png")
 PAGE_ICON = _first_existing(FAVICON_ICO, FAVICON_PNG) or "🎓"
 
-st.set_page_config(
-    page_title=APP_TITLE,
-    page_icon=PAGE_ICON,
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title=APP_TITLE, page_icon=PAGE_ICON,
+                   layout="centered", initial_sidebar_state="collapsed")
 _rerun = (st.rerun if hasattr(st, "rerun") else st.experimental_rerun)
 
 # =========================
@@ -96,7 +94,7 @@ except Exception:
     except Exception:
         DDGS = None
 
-# STT (voz→texto) — opcional
+# STT (voz→texto) — opcional (sem fallback WebSpeech para evitar erro em Cloud)
 try:
     from st_mic_recorder import speech_to_text
     HAS_STT = True
@@ -104,65 +102,10 @@ except Exception:
     HAS_STT = False
 
 # =========================
-# FALLBACK WEB SPEECH API (definido ANTES do uso)
-# =========================
-def webspeech_button(key: str = "stt_web1", label_start="🎤 Falar", label_stop="⏹️ Parar"):
-    html = f"""
-    <div id="{key}_wrap">
-      <button id="{key}_btn" style="width:100%; height:38px; border-radius:8px; border:1px solid #ccc; cursor:pointer;">
-        {label_start}
-      </button>
-    </div>
-    <script>
-      const btn = document.getElementById("{key}_btn");
-      let rec = null; let listening = false;
-
-      function sendToStreamlit(text) {{
-        window.parent.postMessage({{
-          isStreamlitMessage: true,
-          type: "SET_COMPONENT_VALUE",
-          key: "{key}_value",
-          value: text
-        }}, "*");
-      }}
-
-      btn.onclick = () => {{
-        if (!('webkitSpeechRecognition' in window)) {{
-          alert('Seu navegador não suporta reconhecimento de voz (use Chrome/Edge).');
-          return;
-        }}
-        if (!listening) {{
-          rec = new webkitSpeechRecognition();
-          rec.lang = 'pt-BR';
-          rec.continuous = false;
-          rec.interimResults = false;
-          rec.onstart = () => {{ listening = true; btn.innerText = "{label_stop}"; }};
-          rec.onerror = () => {{ listening = false; btn.innerText = "{label_start}"; }};
-          rec.onend = () => {{ listening = false; btn.innerText = "{label_start}"; }};
-          rec.onresult = (e) => {{
-            const text = e.results[0][0].transcript;
-            sendToStreamlit(text);
-          }};
-          rec.start();
-        }} else {{
-          try {{ rec.stop(); }} catch (e) {{}}
-          listening = false;
-          btn.innerText = "{label_start}";
-        }}
-      }};
-    </script>
-    """
-    components.html(html, height=50, key=key)
-    val = st.session_state.get(f"{key}_value")
-    if f"{key}_value" in st.session_state:
-        del st.session_state[f"{key}_value"]
-    return val
-
-# =========================
 # ESTADO
 # =========================
 if "hist" not in st.session_state:
-    # cada item: (quem, texto, emocao, fontes)
+    # (quem, texto, emocao, fontes)
     st.session_state.hist: List[Tuple] = [
         ("bot",
          "Olá! Eu sou o **Aprendiz**, do **Conecta Senac**. Posso conversar sobre cursos, inscrições, EAD, unidades e também sobre como eu funciono. Como posso te ajudar?",
@@ -197,7 +140,7 @@ def avatar_img(emocao: str) -> str:
     return f"<img class='avatar-img' src='data:image/png;base64,{b64img}' alt='{emocao}'/>" if b64img else "<div class='avatar-emoji'>🎓</div>"
 
 # =========================
-# SIDEBAR (preferências)
+# SIDEBAR
 # =========================
 with st.sidebar:
     st.header("⚙️ Preferências")
@@ -206,12 +149,9 @@ with st.sidebar:
     st.session_state.stt_enabled = st.toggle("🎤 Entrada por voz (microfone)", value=st.session_state.stt_enabled)
     st.session_state.font_size = st.slider("♿ Tamanho da fonte", 1.0, 1.5, st.session_state.font_size, 0.05)
     temp = st.slider("Criatividade (temperature)", 0.0, 1.0, 0.35, 0.05)
-    st.session_state["temperature"] = temp  # consistente entre reruns
     web_toggle = st.toggle("🔎 Ativar pesquisa web quando fizer sentido", value=True)
     st.caption(f"LLM: {'OpenAI' if llm_provider=='openai' else '⚠️ não configurado'}")
     st.caption(f"Busca: {'Tavily' if TAVILY_KEY else ('DDGS' if DDGS else '⚠️ indisponível')}")
-    if st.session_state.stt_enabled and not HAS_STT:
-        st.caption("🎤 Usando fallback Web Speech API (Chrome/Edge). Para melhor suporte: `pip install streamlit-mic-recorder`.")
 
 # =========================
 # TEMA / CSS
@@ -270,7 +210,7 @@ st.markdown("<div class='wrap'>", unsafe_allow_html=True)
 st.markdown("<div class='header'><div class='brand'><span>🎓</span><h2>Conecta Senac • Aprendiz</h2></div><span class='tag'>conversa natural • foco Senac</span></div>", unsafe_allow_html=True)
 
 # =========================
-# SUGESTÕES (todas on-topic)
+# SUGESTÕES (on-topic)
 # =========================
 st.markdown("<div class='sugestoes'><h4>💡 Sugestões rápidas</h4></div>", unsafe_allow_html=True)
 SUGESTOES = [
@@ -288,11 +228,15 @@ for i, texto in enumerate(SUGESTOES):
         _rerun()
 
 # =========================
-# ESCOPO SUAVE (foco no Senac, sem ser grosseiro)
+# ESCOPO SUAVE (heurístico)
 # =========================
-SENAC_TERMS = ["senac","senac rs","senacrs","senac.br","senacrs.com.br","curso","cursos","matrícula","matricula","inscrição","inscricao","unidade","unidades","ead","mensalidade","bolsa","certificado","grade","carga","conecta senac","aprendiz"]
-SMALLTALK_TERMS = ["aprendiz","conecta senac","assistente","ia","chatbot","sobre você","quem é você","como funciona","privacidade","dados","projeto"]
-AMBIGUOUS_TERMS = ["carreira","emprego","trabalho","currículo","estágio","faculdade","universidade","enem","vestibular","curso online","curso técnico","tecnologia","gastronomia","gestão","idiomas"]
+SENAC_TERMS = ["senac","senac rs","senacrs","senac.br","senacrs.com.br","curso","cursos",
+               "matrícula","matricula","inscrição","inscricao","unidade","unidades","ead",
+               "mensalidade","bolsa","certificado","grade","carga","conecta senac","aprendiz"]
+SMALLTALK_TERMS = ["aprendiz","conecta senac","assistente","ia","chatbot","sobre você","quem é você",
+                   "como funciona","privacidade","dados","projeto"]
+AMBIGUOUS_TERMS = ["carreira","emprego","trabalho","currículo","estágio","faculdade","universidade",
+                   "enem","vestibular","curso online","curso técnico","tecnologia","gastronomia","gestão","idiomas"]
 
 def classify_scope_heuristic(text: str) -> str:
     t = (text or "").lower()
@@ -309,7 +253,8 @@ def soft_scope_gate(text: str) -> str:
 # =========================
 EXPLICIT_SEARCH_TOKENS = ["pesquise", "pesquisa", "procurar", "procure", "buscar", "busque"]
 ADDR_TOKENS = ["onde fica","endereço","endereco","unidade","unidades","localização","localizacao","perto de mim"]
-INFO_TOKENS = ["horário","horario","telefone","preço","valor","mensalidade","data","quando","link","site","matrícula","inscrição","inscricao","grade curricular","carga horária","carga horaria"]
+INFO_TOKENS = ["horário","horario","telefone","preço","valor","mensalidade","data","quando","link","site",
+               "matrícula","inscrição","inscricao","grade curricular","carga horária","carga horaria"]
 
 def should_search_web(text: str) -> bool:
     t = (text or "").lower()
@@ -383,7 +328,8 @@ def llm_json(messages: List[Dict[str,str]], temperature=0.35, max_tokens=500) ->
         return {"emotion":"neutro","content":"⚠️ Para respostas completas, configure sua chave da OpenAI em secrets.toml."}
     full = [{"role":"system","content": BASE_SISTEMA}] + messages
     try:
-        r = llm_client.chat.completions.create(model=OPENAI_MODEL, messages=full, temperature=temperature, max_tokens=max_tokens)
+        r = llm_client.chat.completions.create(model=OPENAI_MODEL, messages=full,
+                                               temperature=temperature, max_tokens=max_tokens)
         raw = (r.choices[0].message.content or "").strip()
     except Exception as e:
         return {"emotion":"neutro","content":f"⚠️ Problema técnico para gerar a resposta: {e}"}
@@ -411,7 +357,6 @@ def responder_endereco(cidade: str) -> list:
     q2 = f"site:senac.br unidades {cidade}"
     fontes = web_search(q1, 6) or []
     fontes += web_search(q2, 4) or []
-    # de-dup
     out, seen = [], set()
     for f in fontes:
         url = (f.get("url") or "").strip()
@@ -506,7 +451,10 @@ components.html("<script>const box=parent.document.querySelector('#chat'); if(bo
 # =========================
 # EMOÇÕES (feliz padrão; neutro só em erro real)
 # =========================
-ERROR_MARKERS = ["⚠️","erro","error","não consegui","nao consegui","não foi possível","nao foi possivel","problema técnico","problema tecnico","invalid api key","rate limit","timeout","falha","indisponível","indisponivel"]
+ERROR_MARKERS = ["⚠️","erro","error","não consegui","nao consegui","não foi possível","nao foi possivel",
+                 "problema técnico","problema tecnico","invalid api key","rate limit","timeout","falha",
+                 "indisponível","indisponivel"]
+
 def decide_emotion(content: str) -> str:
     txt = (content or "").lower()
     if not txt: return "neutro"
@@ -544,29 +492,31 @@ if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
         if who == "user":
             pergunta = msg
             break
-    payload, fontes = gerar_resposta_json(pergunta, st.session_state.get("temperature", 0.35))
+    payload, fontes = gerar_resposta_json(pergunta, temp)
     content = (payload.get("content") or "").strip()
     final_emotion = decide_emotion(content)
-    _save_json({"emotion": final_emotion, "content": content}, fontes)
+    # salva json no outbox
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    try:
+        _ = _save_json({"emotion": final_emotion, "content": content}, fontes)
+    except Exception:
+        pass
     st.session_state.hist[-1] = ("bot", content or "Posso te ajudar com algo do Senac? 🙂", final_emotion, fontes)
     if st.session_state.tts_enabled and content:
         text_to_speech_component(content)
     _rerun()
 
 # =========================
-# BARRA DE ENTRADA (chat_input + MIC)
+# BARRA DE ENTRADA (chat_input + MIC — sem fallback WebSpeech)
 # =========================
 st.markdown("<div class='input-bar'></div>", unsafe_allow_html=True)
 
-# Linha do microfone acima do chat_input
-mic_txt = None
-mic_row = st.container()
-with mic_row:
+mic_txt: Optional[str] = None
+with st.container():
     c_mic, c_hint = st.columns([0.18, 0.82])
     with c_mic:
         if st.session_state.stt_enabled:
-            if HAS_STT:
-                # Componente nativo (streamlit-mic-recorder)
+            if 'speech_to_text' in globals():  # streamlit-mic-recorder disponível
                 mic_txt = speech_to_text(
                     language="pt-BR",
                     start_prompt="🎤 Falar",
@@ -576,14 +526,14 @@ with mic_row:
                     key="stt_inline_top",
                 )
             else:
-                # Fallback Web Speech API
-                mic_txt = webspeech_button(key="stt_web_top", label_start="🎤 Falar", label_stop="⏹️ Parar")
+                st.markdown("<div class='fake-mic'>🎤 microfone off</div>", unsafe_allow_html=True)
+                st.caption("Para habilitar o microfone: `pip install streamlit-mic-recorder` e reinicie o app.")
         else:
             st.markdown("<div class='fake-mic'>🎤 microfone off</div>", unsafe_allow_html=True)
     with c_hint:
-        st.caption("Dica: você pode falar pelo microfone e eu transcrevo aqui.")
+        st.caption("Dica: você pode falar pelo microfone e eu transcrevo aqui (quando habilitado).")
 
-# Campo fixo no rodapé
+# Campo padrão de entrada
 user_msg = st.chat_input("Digite sua mensagem…")
 
 # Prioridade: fala → texto digitado
