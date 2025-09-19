@@ -512,6 +512,7 @@ def webspeech_button(key: str = "stt_web1", label_start="🎤 Falar", label_stop
     <script>
       const btn = document.getElementById("{key}_btn");
       let rec = null; let listening = false;
+
       function sendToStreamlit(text) {{
         window.parent.postMessage({{
           isStreamlitMessage: true,
@@ -520,6 +521,7 @@ def webspeech_button(key: str = "stt_web1", label_start="🎤 Falar", label_stop
           value: text
         }}, "*");
       }}
+
       btn.onclick = () => {{
         if (!('webkitSpeechRecognition' in window)) {{
           alert('Seu navegador não suporta reconhecimento de voz (use Chrome/Edge em localhost).');
@@ -540,58 +542,21 @@ def webspeech_button(key: str = "stt_web1", label_start="🎤 Falar", label_stop
           rec.start();
         }} else {{
           try {{ rec.stop(); }} catch (e) {{}}
-          listening = false; btn.innerText = "{label_start}";
+          listening = false;
+          btn.innerText = "{label_start}";
         }}
       }};
     </script>
     """
-    components.html(html, height=50, scrolling=False, key=key)
-    return st.session_state.pop(f"{key}_value", None)
+    # ⚠️ Removido o argumento `scrolling`
+    components.html(html, height=50, key=key)
+    # Lê o valor que o JS enviou
+    val = st.session_state.get(f"{key}_value")
+    # limpa para não reutilizar no próximo rerun
+    if f"{key}_value" in st.session_state:
+        del st.session_state[f"{key}_value"]
+    return val
 
-# =========================
-# BARRA DE ENTRADA (MIC + TEXTO + ENVIAR)
-# =========================
-st.markdown("<div class='input-bar'></div>", unsafe_allow_html=True)
-c_mic, c_form = st.columns([0.16, 0.84])
-
-# Mic fora do form (evita erro de button em form)
-mic_txt = None
-with c_mic:
-    if st.session_state.stt_enabled:
-        if HAS_STT:
-            mic_txt = speech_to_text(
-                language="pt-BR",
-                start_prompt="🎤 Falar",
-                stop_prompt="⏹️ Parar",
-                just_once=True,
-                use_container_width=True,
-                key="stt_inline",
-            )
-        else:
-            mic_txt = webspeech_button(key="stt_web1", label_start="🎤 Falar", label_stop="⏹️ Parar")
-    else:
-        st.markdown("<div class='fake-mic'>🎤 microfone off</div>", unsafe_allow_html=True)
-
-# Form (texto + enviar)
-with c_form:
-    with st.form("chat_send", clear_on_submit=True):
-        c_input, c_send = st.columns([0.78, 0.22])
-        with c_input:
-            typed = st.text_input("Digite sua mensagem…", key="typed_text", label_visibility="collapsed")
-        with c_send:
-            sent = st.form_submit_button("Enviar", use_container_width=True)
-
-# Prioridade: fala → texto digitado
-msg = None
-if isinstance(mic_txt, str) and mic_txt.strip():
-    msg = mic_txt.strip()
-elif sent and typed and typed.strip():
-    msg = typed.strip()
-
-if msg:
-    st.session_state.hist.append(("user", msg, None, None))
-    st.session_state.hist.append(("typing", "digitando...", "pensando", None))
-    _rerun()
 
 # =========================
 # RODAPÉ
@@ -604,3 +569,4 @@ with c1:
         _rerun()
 with c2:
     st.caption("Aprendiz — conversa natural, foco no Senac e no que importa pra você.")
+
