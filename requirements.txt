@@ -1,0 +1,5 @@
+streamlit>=1.36
+openai>=1.40.0
+tavily-python>=0.3.5
+ddgs>=1.8.0          # (novo nome do duckduckgo_search)
+streamlit-mic-recorder>=0.0.8
