@@ -103,6 +103,52 @@ except Exception:
     HAS_STT = False
 
 # =========================
+# BARRA DE ENTRADA (chat_input + MIC)
+# =========================
+st.markdown("<div class='input-bar'></div>", unsafe_allow_html=True)
+
+# Linha do microfone acima do chat_input
+mic_txt = None
+mic_row = st.container()
+with mic_row:
+    c_mic, c_hint = st.columns([0.18, 0.82])
+    with c_mic:
+        if st.session_state.stt_enabled:
+            if HAS_STT:
+                # Componente nativo (streamlit-mic-recorder)
+                mic_txt = speech_to_text(
+                    language="pt-BR",
+                    start_prompt="🎤 Falar",
+                    stop_prompt="⏹️ Parar",
+                    just_once=True,
+                    use_container_width=True,
+                    key="stt_inline_top",
+                )
+            else:
+                # Fallback Web Speech API (corrigido: sem 'scrolling')
+                mic_txt = webspeech_button(key="stt_web_top", label_start="🎤 Falar", label_stop="⏹️ Parar")
+        else:
+            st.markdown("<div class='fake-mic'>🎤 microfone off</div>", unsafe_allow_html=True)
+    with c_hint:
+        st.caption("Dica: você pode falar pelo microfone e eu transcrevo aqui.")
+
+# Campo fixo no rodapé
+user_msg = st.chat_input("Digite sua mensagem…")
+
+# Prioridade: fala → texto digitado
+msg = None
+if isinstance(mic_txt, str) and mic_txt.strip():
+    msg = mic_txt.strip()
+elif user_msg and user_msg.strip():
+    msg = user_msg.strip()
+
+if msg:
+    st.session_state.hist.append(("user", msg, None, None))
+    st.session_state.hist.append(("typing", "digitando...", "pensando", None))
+    _rerun()
+
+
+# =========================
 # ESTADO
 # =========================
 if "hist" not in st.session_state:
@@ -569,4 +615,5 @@ with c1:
         _rerun()
 with c2:
     st.caption("Aprendiz — conversa natural, foco no Senac e no que importa pra você.")
+
 
