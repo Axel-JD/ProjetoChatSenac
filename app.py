@@ -1,10 +1,11 @@
-# app.py — Conecta Senac • Aprendiz (estável p/ Streamlit Cloud)
-# - Lê OpenAI/Tavily de st.secrets (com fallback a env)
+# app.py — Conecta Senac • Aprendiz (estável no Streamlit Cloud c/ microfone)
+# - Lê OpenAI/Tavily de st.secrets (c/ fallback a env)
 # - Conversa natural com foco no Senac (sem restrições bruscas)
 # - Pesquisa web só quando fizer sentido (Tavily → DDGS)
-# - Saída JSON salva em /respostas ({"emotion":"feliz|neutro","content":"..."} )
-# - STT via streamlit-mic-recorder (se instalado); sem fallback WebSpeech (evita erro em Cloud)
-# - UI com form correto e st.rerun
+# - Saída JSON salva em /respostas: {"emotion":"feliz|neutro","content":"..."}
+# - STT via streamlit-mic-recorder (se instalado) — compatível com Streamlit Cloud
+# - TTS via SpeechSynthesis (navegador)
+# - UI com chat_input + botão de microfone (sem forms conflitantes)
 
 import os
 import re
@@ -74,15 +75,13 @@ API_KEY = os.getenv("OPENAI_API_KEY") or _get_secret("openai", "api_key")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL") or _get_secret("openai", "model", default="gpt-4o-mini")
 TAVILY_KEY = os.getenv("TAVILY_API_KEY") or _get_secret("tavily", "api_key")
 
-llm_provider = None
 llm_client = None
 if API_KEY:
     try:
         from openai import OpenAI  # openai>=1.x
-        llm_provider = "openai"
         llm_client = OpenAI(api_key=API_KEY)
     except Exception as e:
-        st.sidebar.error("Pacote 'openai' ausente ou incompatível. Verifique o requirements.txt.")
+        st.sidebar.error("Pacote 'openai' ausente/incompatível. Ajuste seu requirements.txt.")
         st.sidebar.caption(f"Detalhe técnico: {e!r}")
 
 # DDGS (novo nome) → fallback antigo se preciso
@@ -94,7 +93,7 @@ except Exception:
     except Exception:
         DDGS = None
 
-# STT (voz→texto) — opcional (sem fallback WebSpeech para evitar erro em Cloud)
+# STT (voz→texto) — **apenas** via streamlit-mic-recorder (compatível Cloud)
 try:
     from st_mic_recorder import speech_to_text
     HAS_STT = True
@@ -148,10 +147,12 @@ with st.sidebar:
     st.session_state.tts_enabled = st.toggle("🔊 Ler respostas em voz alta", value=st.session_state.tts_enabled)
     st.session_state.stt_enabled = st.toggle("🎤 Entrada por voz (microfone)", value=st.session_state.stt_enabled)
     st.session_state.font_size = st.slider("♿ Tamanho da fonte", 1.0, 1.5, st.session_state.font_size, 0.05)
-    temp = st.slider("Criatividade (temperature)", 0.0, 1.0, 0.35, 0.05)
+    temperature = st.slider("Criatividade (temperature)", 0.0, 1.0, 0.35, 0.05, key="temperature")
     web_toggle = st.toggle("🔎 Ativar pesquisa web quando fizer sentido", value=True)
-    st.caption(f"LLM: {'OpenAI' if llm_provider=='openai' else '⚠️ não configurado'}")
+    st.caption(f"LLM: {'OpenAI' if llm_client else '⚠️ não configurado'}")
     st.caption(f"Busca: {'Tavily' if TAVILY_KEY else ('DDGS' if DDGS else '⚠️ indisponível')}")
+    if st.session_state.stt_enabled and not HAS_STT:
+        st.info("Para habilitar o microfone no Cloud, adicione **streamlit-mic-recorder** ao requirements.txt e redeploy.")
 
 # =========================
 # TEMA / CSS
@@ -333,7 +334,6 @@ def llm_json(messages: List[Dict[str,str]], temperature=0.35, max_tokens=500) ->
         raw = (r.choices[0].message.content or "").strip()
     except Exception as e:
         return {"emotion":"neutro","content":f"⚠️ Problema técnico para gerar a resposta: {e}"}
-    # Parse robusto
     try:
         return json.loads(raw)
     except Exception:
@@ -492,12 +492,11 @@ if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
         if who == "user":
             pergunta = msg
             break
-    payload, fontes = gerar_resposta_json(pergunta, temp)
+    payload, fontes = gerar_resposta_json(pergunta, st.session_state.get("temperature", 0.35))
     content = (payload.get("content") or "").strip()
     final_emotion = decide_emotion(content)
-    # salva json no outbox
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     try:
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         _ = _save_json({"emotion": final_emotion, "content": content}, fontes)
     except Exception:
         pass
@@ -507,7 +506,7 @@ if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
     _rerun()
 
 # =========================
-# BARRA DE ENTRADA (chat_input + MIC — sem fallback WebSpeech)
+# BARRA DE ENTRADA (chat_input + MICROFONE)
 # =========================
 st.markdown("<div class='input-bar'></div>", unsafe_allow_html=True)
 
@@ -516,7 +515,7 @@ with st.container():
     c_mic, c_hint = st.columns([0.18, 0.82])
     with c_mic:
         if st.session_state.stt_enabled:
-            if 'speech_to_text' in globals():  # streamlit-mic-recorder disponível
+            if HAS_STT:  # aparece botão real
                 mic_txt = speech_to_text(
                     language="pt-BR",
                     start_prompt="🎤 Falar",
@@ -525,13 +524,13 @@ with st.container():
                     use_container_width=True,
                     key="stt_inline_top",
                 )
-            else:
+            else:        # pacote ausente: placeholder e instrução
                 st.markdown("<div class='fake-mic'>🎤 microfone off</div>", unsafe_allow_html=True)
-                st.caption("Para habilitar o microfone: `pip install streamlit-mic-recorder` e reinicie o app.")
+                st.caption("Adicione `streamlit-mic-recorder` ao requirements.txt e redeploy.")
         else:
             st.markdown("<div class='fake-mic'>🎤 microfone off</div>", unsafe_allow_html=True)
     with c_hint:
-        st.caption("Dica: você pode falar pelo microfone e eu transcrevo aqui (quando habilitado).")
+        st.caption("Dica: ative o microfone na barra lateral e permita no navegador.")
 
 # Campo padrão de entrada
 user_msg = st.chat_input("Digite sua mensagem…")
