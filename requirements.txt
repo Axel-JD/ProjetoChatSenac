@@ -1,5 +1,5 @@
-streamlit>=1.33
+streamlit>=1.34
 openai>=1.30
-ddgs>=2.3.2    # (ou duckduckgo_search>=6)
 tavily-python>=0.3
+ddgs>=2.3.2          # ou, se preferir: duckduckgo_search>=6
 streamlit-mic-recorder>=0.0.8
