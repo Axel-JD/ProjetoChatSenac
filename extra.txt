@@ -1,0 +1,5 @@
+sistema de úsuario / sistema de login
+banco de dados de mensagens e ação
+resposta formato .json 
+configurar ações possíveis no bd (banco de dados)
+leitura do banco de dados para contexto
