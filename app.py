@@ -1,11 +1,10 @@
 # app.py — Conecta Senac • Aprendiz
-# Versão Final com SQLite, Lógica de Foco Senac e Modo Escuro Corrigido
+# Versão Final (SQLite, Foco Senac, UI Limpa, Modo Escuro e STT integrados)
 # ----------------------------------------------------------------------
 # Dependências: Streamlit, openai, tavily-python, ddgs, streamlit-mic-recorder
 # Persistência: Histórico e Contatos salvos em conecta_senac.db (SQLite).
 # Foco: LLM é forçado a conectar perguntas off-topic ao Senac.
-# Tema: Modo Escuro altera o background de toda a aplicação (CSS corrigido).
-# UI: Mensagens de "microfone off" removidas do corpo principal, mantendo dica APENAS na sidebar.
+# UI: Botão de microfone integrado.
 # ----------------------------------------------------------------------
 
 import os
@@ -146,7 +145,6 @@ def _get_secret(*keys, default: str = "") -> str:
             cur = cur[k]
         return str(cur).strip()
     except Exception:
-        # Fallback para variáveis de ambiente se não estiver no Streamlit Cloud ou secrets.toml
         return os.getenv("_".join(keys).upper()) or default
 
 # =========================
@@ -700,7 +698,7 @@ if msg:
 # =========================
 if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_bottom"):
     st.session_state.hist = [("bot", "Conversa limpa! Quer falar sobre cursos, inscrição, EAD, unidades ou conhecer melhor o Aprendiz? 🙂", "feliz", None)]
-    st.session_session_state.awaiting_location = False
+    st.session_state.awaiting_location = False
     st.session_state.awaiting_contact = False
     _rerun()
 
