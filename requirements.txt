@@ -4,3 +4,4 @@ openai>=1.30
 tavily-python>=0.3
 ddgs>=2.3.2
 streamlit-mic-recorder
+streamlit-mic-recorder
