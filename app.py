@@ -3,6 +3,7 @@
 # ----------------------------------------------------------------------
 # Recursos: STT/Voz (audio-recorder-streamlit + Whisper), Foco Senac, Tema Escuro Corrigido.
 # Otimizações: Cache na busca web (web_search) para melhor desempenho.
+# MODIFICADO: Adicionado scraping (leitura) de artigos com Trafilatura.
 # ----------------------------------------------------------------------
 
 import os
@@ -98,6 +99,18 @@ try:
 except Exception:
     HAS_STT = False
     
+# *** NOVO: Imports para scraping (leitura) de artigos/notícias ***
+try:
+    import requests
+    from trafilatura import fetch_url, extract
+    HAS_SCRAPER = True
+except Exception:
+    HAS_SCRAPER = False
+    requests = None
+    fetch_url = None
+    extract = None
+# *** FIM DA MUDANÇA ***
+    
 # =========================
 # ESTADO
 # =========================
@@ -173,6 +186,11 @@ with st.sidebar:
     st.caption(f"Status do Áudio: {'Sucesso' if HAS_STT else 'FALHA'}")
     if st.session_state.stt_enabled and not HAS_STT:
         st.error("Falha ao carregar o componente de microfone. Verifique o requirements.txt.")
+    
+    # *** NOVO: Diagnóstico do Scraper ***
+    if web_toggle and not HAS_SCRAPER:
+        st.warning("Libs 'requests' ou 'trafilatura' não econtradas. A leitura de artigos está desativada. Verifique o requirements.txt.")
+    # *** FIM DA MUDANÇA ***
 
 # =========================
 # TEMA / CSS (FUNDO CORRIGIDO)
@@ -187,9 +205,7 @@ if DARK:
 else:
     COR_BG1, COR_BG2 = "#fbfdff", "#eef3fb"
     COR_FUNDO = "#F7F9FC"; COR_BORDA = "#0E4E9B"
-    # *** LINHA MODIFICADA ***
     COR_USER = "#0E4E9B"; COR_USER_TXT = "#111827" # Texto do usuário (Preto no modo claro)
-    # *** FIM DA MODIFICAÇÃO ***
     COR_BOT = "#F47920"; COR_BOT_TXT = "#FFFFFF"
     COR_LINK = "#0A66C2"; HEADER_GRAD_1, HEADER_GRAD_2 = "#0e4e9b", "#2567c4"
 
@@ -274,9 +290,10 @@ def classify_scope_heuristic(text: str) -> str:
     return "off"
 
 # =========================
-# BUSCA WEB (Tavily → DDGS)
+# BUSCA WEB (Tavily → DDGS) + SCRAPING (LEITURA)
 # =========================
-EXPLICIT_SEARCH_TOKENS = ["pesquise", "pesquisa", "procurar", "procure", "buscar", "busque"]
+# *** MODIFICADO: Adicionado "notícias" e "artigos" para ativar a leitura ***
+EXPLICIT_SEARCH_TOKENS = ["pesquise", "pesquisa", "procurar", "procure", "buscar", "busque", "notícia", "notícias", "artigo", "artigos", "ler"]
 ADDR_TOKENS = ["onde fica","endereço","endereco","unidade","unidades","localização","localizacao","perto de mim"]
 INFO_TOKENS = ["horário","horario","telefone","preço","valor","mensalidade","data","quando","link","site",
                "matrícula","inscrição","inscricao","grade curricular","carga horária","carga horaria"]
@@ -291,6 +308,7 @@ def should_search_web(text: str) -> bool:
 
 @st.cache_data(ttl=3600, show_spinner=False) # Cache de 1 hora
 def web_search(query: str, max_results: int = 6):
+    """Busca web básica (APENAS snippets). Usada para endereços ou como base."""
     if TAVILY_KEY:
         try:
             from tavily import TavilyClient
@@ -312,6 +330,56 @@ def web_search(query: str, max_results: int = 6):
     except Exception:
         return []
 
+# *** NOVO: Função helper para "ler" o conteúdo de artigos/notícias ***
+@st.cache_data(ttl=3600, show_spinner=False)
+def scrape_article_text(url: str) -> Optional[str]:
+    """Tenta baixar e extrair o texto principal de uma URL usando Trafilatura."""
+    if not url or not HAS_SCRAPER:
+        return None
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        # Usamos requests pois o fetch_url nativo do trafilatura pode ser bloqueado
+        response = requests.get(url, headers=headers, timeout=8, allow_redirects=True)
+        response.raise_for_status() 
+        
+        main_text = extract(response.content, 
+                            include_comments=False, 
+                            include_tables=False,
+                            no_fallback=True) # Evita pegar o HTML inteiro se falhar
+        
+        return (main_text or "").strip()
+    except Exception as e:
+        return None # Falha silenciosa
+
+# *** NOVO: Função principal para buscar E ler artigos ***
+@st.cache_data(ttl=3600, show_spinner=False)
+def search_and_read_articles(query: str, max_results: int = 4):
+    """Busca na web (básico) e depois tenta 'ler' cada resultado."""
+    # 1. Busca básica (links e snippets)
+    basic_results = web_search(query, max_results)
+    if not basic_results:
+        return []
+        
+    # 2. Tenta ler cada URL
+    advanced_results = []
+    for r in basic_results:
+        snippet = r.get("content") or ""
+        url = r.get("url")
+        full_content = scrape_article_text(url)
+        
+        # Usa o conteúdo lido se for significativamente maior que o snippet
+        final_content = full_content if (full_content and len(full_content) > len(snippet) * 1.5) else snippet
+        
+        advanced_results.append({
+            "title": r.get("title"),
+            "url": url,
+            "content": final_content
+        })
+    return advanced_results
+# *** FIM DAS MUDANÇAS ***
+
 # =========================
 # PROMPTS / LLM (sempre JSON)
 # =========================
@@ -320,7 +388,9 @@ BASE_SISTEMA = (
     "Seu foco ABSOLUTO é no Senac (especialmente Senac RS), seus cursos/serviços, inscrições, EAD/presencial, unidades/endereços/horários, eventos e no próprio Aprendiz/Conecta Senac (small talk permitido). "
     "NÃO responda perguntas que não tenham ligação com o Senac. Se a pergunta for alheia, você DEVE **redirecionar** ou **conectar** o assunto ao Senac na sua resposta. (Ex: 'Você me perguntou sobre [Assunto Geral], mas o Senac tem [Curso Relacionado].') "
     "Se o usuário demonstrar interesse (ex: 'Quero me inscrever', 'Me diga o próximo passo', 'Gostei e quero mais'), a próxima resposta DEVE ser uma pergunta para ele, verificando se você pode pegar o NOME e E-MAIL dele e armazenar para que o Senac entre em contato. "
-    "Evite pesquisas desnecessárias. Só use dados da web quando receber do sistema um contexto com links/trechos. "
+    # *** MODIFICADO: Instrução para usar o conteúdo lido (scrape) ***
+    "Evite pesquisas desnecessárias. Só use dados da web quando receber do sistema um contexto com links/trechos. O contexto pode conter o TEXTO COMPLETO de artigos/notícias; use essa informação para responder em detalhes, mas seja conciso e cite as fontes. "
+    # *** FIM DA MUDANÇA ***
     "Para endereços/unidades, NUNCA adivinhe: peça a cidade se faltar; se houver fontes, cite links. "
     "Formate ESTRITAMENTE como JSON válido (sem texto fora do JSON): "
     '{"emotion":"feliz|neutro|triste|duvida","content":"<markdown conciso>"}'
@@ -398,8 +468,10 @@ def extract_city(text: str) -> str:
 def responder_endereco(cidade: str) -> list:
     q1 = f"site:senacrs.com.br unidades {cidade}"
     q2 = f"site:senac.br unidades {cidade}"
-    fontes = web_search(q1, 6) or []
+    # *** MODIFICAÇÃO: Garante que esta função use a busca BÁSICA (rápida) ***
+    fontes = web_search(q1, 6) or [] # web_search é a básica
     fontes += web_search(q2, 4) or []
+    # *** FIM DA MUDANÇA ***
     out, seen = [], set()
     for f in fontes:
         url = (f.get("url") or "").strip()
@@ -442,12 +514,17 @@ def gerar_resposta_json(pergunta: str, temperature: float):
         if not city:
             st.session_state.awaiting_location = True
             return {"emotion":"feliz","content":"Para localizar certinho, me diz a **cidade** (e o estado, se for fora do RS). 😉"}, []
+        else:
+            # Se a cidade já foi dada (ex: "onde fica senac porto alegre"), busca direto
+            if web_toggle:
+                fontes = responder_endereco(city) # Usa a busca BÁSICA
+            # Continua para o Bloco 5 para formatar a resposta...
 
     if st.session_state.awaiting_location and not any(k in pl for k in ["senac","curso","inscri","pagamento","unidade","matrícula","ead"]):
         st.session_state.awaiting_location = False
         city = p.title()
         if web_toggle:
-            fontes = responder_endereco(city)
+            fontes = responder_endereco(city) # Usa a busca BÁSICA
         
         if fontes:
             ctx = "\n".join([f"[{i+1}] {h['title']} — {h['url']}\n{(h.get('content') or '')[:600]}" for i,h in enumerate(fontes)])
@@ -469,11 +546,16 @@ def gerar_resposta_json(pergunta: str, temperature: float):
                        })
 
     # --- BLOCO 5: BUSCA WEB E RESPOSTA FINAL ---
-    if web_toggle and should_search_web(p):
-        fontes = web_search(p, 6)
+    # *** MODIFICADO: Chama a função de leitura de artigos ***
+    # (Só roda se 'fontes' não foi preenchido pelo Bloco 3)
+    if not fontes and web_toggle and should_search_web(p):
+        fontes = search_and_read_articles(p, 5) # Chama a nova função de LEITURA
+    # *** FIM DA MUDANÇA ***
 
     if fontes:
-        ctx = "\n".join([f"[{i+1}] {h['title']} — {h['url']}\n{(h.get('content') or '')[:600]}" for i,h in enumerate(fontes)])
+        # *** MODIFICADO: Trunca o conteúdo (que pode ser longo) antes de enviar ao LLM ***
+        ctx = "\n".join([f"[{i+1}] {h['title']} — {h['url']}\n{(h.get('content') or '')[:1500]}" for i,h in enumerate(fontes)])
+        # *** FIM DA MUDANÇA ***
         msgs.insert(0, {"role":"system","content":"Contexto de pesquisa:\n"+ctx})
         
     msgs.append({"role":"user","content": p})
