@@ -4,7 +4,11 @@
 # Dependências: Streamlit, openai, tavily-python, ddgs, streamlit-mic-recorder
 # Persistência: Histórico e Contatos salvos em conecta_senac.db (SQLite).
 # Foco: LLM é forçado a conectar perguntas off-topic ao Senac.
-# UI: Botão de microfone integrado.
+# UI: Botão de microfone integrado.# =========================
+# DIAGNÓSTICO TEMPORÁRIO
+# =========================
+if not HAS_STT:
+    st.error("Diagnóstico: HAS_STT é FALSO. A importação da biblioteca falhou, mesmo se instalada.")
 # ----------------------------------------------------------------------
 
 import os
@@ -704,3 +708,4 @@ if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_b
 
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
+
