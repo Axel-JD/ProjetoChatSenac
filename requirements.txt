@@ -1,7 +1,5 @@
-# NOVO requirements.txt
 streamlit>=1.34
 openai>=1.30
 tavily-python>=0.3
 ddgs>=2.3.2
-# PACOTE NOVO E MAIS ESTÁVEL PARA ÁUDIO:
 audio-recorder-streamlit
