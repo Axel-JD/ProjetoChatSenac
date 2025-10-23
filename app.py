@@ -307,29 +307,49 @@ def should_search_web(text: str) -> bool:
     return False
 
 @st.cache_data(ttl=3600, show_spinner=False) # Cache de 1 hora
+@st.cache_data(ttl=3600, show_spinner=False) # Cache de 1 hora
 def web_search(query: str, max_results: int = 6):
     """Busca web básica (APENAS snippets). Usada para endereços ou como base."""
+    
+    l_query = query.lower()
+    # Verifica se a consulta é sobre notícias ou artigos
+    is_news_query = any(tok in l_query for tok in ["notícia", "notícias", "artigo", "artigos", "g1", "reportagem", "matéria"])
+
+    # --- INÍCIO DA LÓGICA DE BUSCA APRIMORADA ---
+    if "senac" in l_query:
+        # A consulta já menciona "senac". Pesquise em toda a web. (Ex: "notícias senac g1")
+        q = query
+    elif is_news_query:
+        # A consulta é sobre notícias, mas não menciona "senac". Adicione "Senac" e pesquise em toda a web.
+        # (Ex: "notícias no g1" -> "Senac notícias no g1")
+        q = f"Senac {query}"
+    else:
+        # Consulta geral (cursos, horários, etc.). Restrinja aos sites do Senac.
+        q = f"site:senacrs.com.br OR site:senac.br {query}"
+    # --- FIM DA LÓGICA DE BUSCA APRIMORADA ---
+
     if TAVILY_KEY:
         try:
             from tavily import TavilyClient
             tv = TavilyClient(api_key=TAVILY_KEY)
-            q = query if "senac" in query.lower() else f"site:senacrs.com.br OR site:senac.br {query}"
+            # Usa a nova query 'q'
             res = tv.search(query=q, max_results=max_results, search_depth="basic")
             if isinstance(res, dict) and res.get("results"):
                 return [{"title": r.get("title"), "url": r.get("url"), "content": r.get("content")} for r in res["results"]]
         except Exception:
             pass
+            
     if DDGS is None: return []
     try:
         hits = []
-        q = query if "senac" in query.lower() else f"site:senacrs.com.br {query}"
+        # Usa a nova query 'q'
         with DDGS() as ddgs:
             for r in ddgs.text(q, max_results=max_results):
                 hits.append({"title": r.get("title"), "url": r.get("href") or r.get("url"), "content": r.get("body")})
         return hits
     except Exception:
         return []
-
+        
 # *** NOVO: Função helper para "ler" o conteúdo de artigos/notícias ***
 @st.cache_data(ttl=3600, show_spinner=False)
 def scrape_article_text(url: str) -> Optional[str]:
@@ -383,16 +403,26 @@ def search_and_read_articles(query: str, max_results: int = 4):
 # =========================
 # PROMPTS / LLM (sempre JSON)
 # =========================
+# =========================
+# PROMPTS / LLM (sempre JSON)
+# =========================
 BASE_SISTEMA = (
     "Você é o Aprendiz, assistente do projeto Conecta Senac. Converse de forma natural, gentil e útil (PT-BR). "
-    
-    # --- MUDANÇA AQUI ---
     "Seu tom deve ser **sempre prestativo e positivo**. Dê preferência à emoção 'feliz' em suas respostas, a menos que o usuário esteja claramente frustrado ou confuso. "
-    
     "Seu foco ABSOLUTO é no Senac (especialmente Senac RS), seus cursos/serviços, inscrições, EAD/presencial, unidades/endereços/horários, eventos, **notícias** e no próprio Aprendiz/Conecta Senac (small talk permitido). "
+    
     "Se a pergunta for alheia (ex: política, esportes) E **nenhum contexto de busca for fornecido**, você DEVE **redirecionar** ou **conectar** o assunto ao Senac. (Ex: 'Você me perguntou sobre [Assunto Geral], mas o Senac tem [Curso Relacionado].') "
+    
+    # --- INÍCIO DA MUDANÇA (Instrução de Formato) ---
+    "Quando o usuário pedir por **notícias ou artigos** (ex: 'notícias do senac', 'resumo da notícia'), e o contexto da web for fornecido (com 'content' e 'url'), sua resposta DEVE seguir este formato:"
+    "1.  Responda diretamente (ex: 'Sim, encontrei esta notícia...')."
+    "2.  Forneça um **breve resumo** do artigo com base no texto lido (o 'content' do contexto)."
+    "3.  Formate o link da fonte principal em markdown, assim: **[Título da Notícia](link.com)**."
+    "NÃO liste links irrelevantes se eles não responderem à pergunta sobre a notícia."
+    # --- FIM DA MUDANÇA ---
+
     "Se o usuário demonstrar interesse (ex: 'Quero me inscrever', 'Me diga o próximo passo', 'Gostei e quero mais'), a próxima resposta DEVE ser uma pergunta para ele, verificando se você pode pegar o NOME e E-MAIL dele e armazenar para que o Senac entre em contato. "
-    "Use os dados da web (contexto) quando fornecidos. O contexto pode conter o TEXTO COMPLETO de artigos/notícias. **Responda a pergunta do usuário com base nesse contexto.** Resuma os artigos se necessário e cite as fontes. "
+    "Use os dados da web (contexto) quando fornecidos. O contexto pode conter o TEXTO COMPLETO de artigos/notícias. **Responda a pergunta do usuário com base nesse contexto.** "
     "Para endereços/unidades, NUNCA adivinhe: peça a cidade se faltar; se houver fontes, cite links. "
     "Formate ESTRITAMENTE como JSON válido (sem texto fora do JSON): "
     '{"emotion":"feliz|neutro|triste|duvida","content":"<markdown conciso>"}'
@@ -745,5 +775,6 @@ if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_b
 
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
+
 
 
