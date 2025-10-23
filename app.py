@@ -219,8 +219,8 @@ st.markdown(f"""
 * {{ box-sizing: border-box; }}
 
 /* CORREÇÃO DO MODO ESCURO: Define o background da página e do stApp */
-body {{ background-color: var(--bg2); }}
-.stApp {{ background-color: var(--bg2); background-attachment: fixed; }}
+body {{ background-color: var(--bg2); }} 
+.stApp {{ background-color: var(--bg2); background-attachment: fixed; }} 
 /* FIM DA CORREÇÃO */
 
 .wrap {{ width:100%; max-width:900px; margin:0 auto; }}
@@ -242,8 +242,8 @@ body {{ background-color: var(--bg2); }}
 .dot:nth-child(2) {{ animation-delay:.2s; }} .dot:nth-child(3) {{ animation-delay:.4s; }}
 @keyframes blink {{ 0%, 80%, 100% {{ transform: scale(0); opacity: .3; }} 40% {{ transform: scale(1); opacity: 1; }} }}
 a {{ color:var(--link); text-decoration:none; }} a:hover {{ text-decoration:underline; }}
-.input-bar {{ margin-top:10px; }} /* Espaço para a barra de input abaixo */
-
+.input-bar {{ margin-top:10px; }}
+.fake-mic {{ display:flex; align-items:center; justify-content:center; height:38px; border:1px dashed #bbb; border-radius:8px; color:#888; font-size:14px; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -824,3 +824,4 @@ if msg_to_process:
 # O botão de limpar foi movido para a barra de entrada
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
+
