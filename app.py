@@ -1,8 +1,8 @@
 # app.py — Conecta Senac • Aprendiz
-# Versão Final Completa com Transcrição Whisper
+# Versão Final Completa e Otimizada
 # ----------------------------------------------------------------------
-# Recursos: STT/Voz (audio-recorder-streamlit + Whisper), Foco Senac, Tema Escuro, UI Otimizada.
-# Dependências: streamlit, openai, tavily-python, ddgs, audio-recorder-streamlit, io, tempfile.
+# Recursos: STT/Voz (audio-recorder-streamlit + Whisper), Foco Senac, Tema Escuro Corrigido.
+# Otimizações: Cache na busca web (web_search) para melhor desempenho.
 # ----------------------------------------------------------------------
 
 import os
@@ -13,8 +13,8 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
-import io # Necessário para manipulação de bytes
-import tempfile # Necessário para criar arquivo temporário para o Whisper
+import io
+import tempfile 
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -59,7 +59,6 @@ _rerun = (st.rerun if hasattr(st, "rerun") else st.experimental_rerun)
 # =========================
 # SECRETS / HELPERS
 # =========================
-# Função para ler segredos de secrets.toml ou variáveis de ambiente
 def _get_secret(*keys, default: str = "") -> str:
     try:
         cur = st.secrets
@@ -288,6 +287,7 @@ def should_search_web(text: str) -> bool:
             return True
     return False
 
+@st.cache_data(ttl=3600, show_spinner=False) # Cache de 1 hora
 def web_search(query: str, max_results: int = 6):
     if TAVILY_KEY:
         try:
@@ -424,7 +424,7 @@ def gerar_resposta_json(pergunta: str, temperature: float):
             name_part = p[:m_email.start()].strip()
             name = name_part.split()[-1].title() if name_part else "Interessado"
             
-            # NOTA: Sem DB, a mensagem é apenas informativa.
+            # Resposta simulada de salvamento
             return {"emotion": "feliz", "content": f"Perfeito, **{name}**! O e-mail **{email}** foi processado. A equipe Senac entrará em contato em breve. Enquanto isso, mais alguma dúvida sobre nossos cursos?"}, []
         else:
             return {"emotion": "duvida", "content": "Não consegui identificar seu e-mail. Por favor, digite seu **NOME** e **E-MAIL** para contato, ou diga 'Não' se não quiser prosseguir."}, []
@@ -594,10 +594,10 @@ if st.session_state.stt_enabled and HAS_STT:
     if audio_bytes:
         # Tenta transcrever o áudio usando a API Whisper
         if llm_client:
-            # Usamos NamedTemporaryFile pois o Whisper espera um objeto de arquivo real
             tmp_file_path = None
             try:
                 # 1. Salva os bytes em um arquivo temporário
+                # O formato .wav é o mais compatível com o audio-recorder-streamlit
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
                     tmp_file.write(audio_bytes)
                     tmp_file_path = tmp_file.name
@@ -611,12 +611,14 @@ if st.session_state.stt_enabled and HAS_STT:
                             language="pt" # Define a linguagem para melhorar a precisão
                         )
                         mic_txt = transcricao_obj.text
-                        st.session_state.hist.append(("user", f"Transcrição: *{mic_txt}*", None, None))
+                        
+                        # Adiciona a transcrição como mensagem do usuário no histórico
+                        st.session_state.hist.append(("user", mic_txt, None, None))
                         
             except Exception as e:
                 # Log de erro caso a transcrição falhe
                 mic_txt = "Transcrição falhou: Ocorreu um erro na API Whisper."
-                st.error(f"Erro na transcrição Whisper: {e}")
+                st.error(f"Erro na transcrição Whisper. Verifique sua chave e permissões.")
             finally:
                 # 3. Limpa o arquivo temporário
                 if tmp_file_path and os.path.exists(tmp_file_path):
@@ -624,7 +626,8 @@ if st.session_state.stt_enabled and HAS_STT:
                 
         else:
             # Fallback se a chave OpenAI não estiver configurada
-            mic_txt = "Erro: Chave OpenAI necessária para transcrever com Whisper."
+            st.error("Chave OpenAI é necessária para transcrever com Whisper.")
+            mic_txt = None # Não permite que o chat prossiga
 
 
 # Chat input principal
@@ -634,14 +637,14 @@ user_msg = st.chat_input("Digite sua mensagem…")
 # Processamento da Mensagem (Voz ou Texto)
 msg = None
 if mic_txt and mic_txt.strip():
-    # Se mic_txt tem conteúdo, ele será o input principal para o LLM
+    # Se mic_txt tem conteúdo, ele já foi adicionado ao histórico no bloco acima
     msg = mic_txt.strip()
 elif user_msg and user_msg.strip():
     msg = user_msg.strip()
+    st.session_state.hist.append(("user", msg, None, None))
+
 
 if msg:
-    # Se a mensagem veio do microfone, já adicionamos uma entrada (a transcrição) ao histórico no bloco acima.
-    # Adicionamos agora a entrada do LLM para "pensar"
     st.session_state.hist.append(("typing", "digitando...", "pensando", None))
     _rerun()
 
