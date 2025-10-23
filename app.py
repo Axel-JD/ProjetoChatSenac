@@ -1,8 +1,8 @@
 # app.py — Conecta Senac • Aprendiz
-# Versão Final Completa
+# Versão Final Completa com Transcrição Whisper
 # ----------------------------------------------------------------------
-# Recursos: STT/Voz (audio-recorder-streamlit), Foco Senac, Tema Escuro Corrigido.
-# Dependências: streamlit, openai, tavily-python, ddgs, audio-recorder-streamlit
+# Recursos: STT/Voz (audio-recorder-streamlit + Whisper), Foco Senac, Tema Escuro, UI Otimizada.
+# Dependências: streamlit, openai, tavily-python, ddgs, audio-recorder-streamlit, io, tempfile.
 # ----------------------------------------------------------------------
 
 import os
@@ -13,6 +13,8 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
+import io # Necessário para manipulação de bytes
+import tempfile # Necessário para criar arquivo temporário para o Whisper
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -57,7 +59,7 @@ _rerun = (st.rerun if hasattr(st, "rerun") else st.experimental_rerun)
 # =========================
 # SECRETS / HELPERS
 # =========================
-# (Esta função DEVE vir antes do bloco PROVEDORES para evitar NameError)
+# Função para ler segredos de secrets.toml ou variáveis de ambiente
 def _get_secret(*keys, default: str = "") -> str:
     try:
         cur = st.secrets
@@ -569,7 +571,7 @@ if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
     _rerun()
 
 # =========================
-# BARRA DE ENTRADA (chat_input + MICROFONE) - UI LIMPA
+# BARRA DE ENTRADA (chat_input + MICROFONE COM WHISPER)
 # =========================
 st.markdown("<div class='input-bar'></div>", unsafe_allow_html=True)
 
@@ -577,7 +579,7 @@ audio_bytes: Optional[bytes] = None
 mic_txt: Optional[str] = None
 user_msg = None
 
-# Apenas mostra o gravador se a funcionalidade estiver ativada e o componente carregado
+# Apenas mostra o gravador se a funcionalidade estiver ativada E o componente carregado
 if st.session_state.stt_enabled and HAS_STT:
     
     # O audio_recorder cria o botão e retorna os bytes do áudio gravado
@@ -590,9 +592,39 @@ if st.session_state.stt_enabled and HAS_STT:
     )
 
     if audio_bytes:
-        # Mensagem de confirmação forçada, já que a transcrição direta é complexa no Cloud.
-        # SE VOCÊ QUISER TRANSCRIÇÃO REAL, use a API da OpenAI (Whisper) aqui.
-        mic_txt = "Pergunta de voz recebida. Qual é a sua resposta?" 
+        # Tenta transcrever o áudio usando a API Whisper
+        if llm_client:
+            # Usamos NamedTemporaryFile pois o Whisper espera um objeto de arquivo real
+            tmp_file_path = None
+            try:
+                # 1. Salva os bytes em um arquivo temporário
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+                    tmp_file.write(audio_bytes)
+                    tmp_file_path = tmp_file.name
+
+                # 2. Chama a API Whisper
+                with open(tmp_file_path, "rb") as audio_file:
+                    with st.spinner("🎧 Transcrevendo áudio..."):
+                        transcricao_obj = llm_client.audio.transcriptions.create(
+                            model="whisper-1", 
+                            file=audio_file,
+                            language="pt" # Define a linguagem para melhorar a precisão
+                        )
+                        mic_txt = transcricao_obj.text
+                        st.session_state.hist.append(("user", f"Transcrição: *{mic_txt}*", None, None))
+                        
+            except Exception as e:
+                # Log de erro caso a transcrição falhe
+                mic_txt = "Transcrição falhou: Ocorreu um erro na API Whisper."
+                st.error(f"Erro na transcrição Whisper: {e}")
+            finally:
+                # 3. Limpa o arquivo temporário
+                if tmp_file_path and os.path.exists(tmp_file_path):
+                    os.remove(tmp_file_path)
+                
+        else:
+            # Fallback se a chave OpenAI não estiver configurada
+            mic_txt = "Erro: Chave OpenAI necessária para transcrever com Whisper."
 
 
 # Chat input principal
@@ -602,12 +634,14 @@ user_msg = st.chat_input("Digite sua mensagem…")
 # Processamento da Mensagem (Voz ou Texto)
 msg = None
 if mic_txt and mic_txt.strip():
+    # Se mic_txt tem conteúdo, ele será o input principal para o LLM
     msg = mic_txt.strip()
 elif user_msg and user_msg.strip():
     msg = user_msg.strip()
 
 if msg:
-    st.session_state.hist.append(("user", msg, None, None))
+    # Se a mensagem veio do microfone, já adicionamos uma entrada (a transcrição) ao histórico no bloco acima.
+    # Adicionamos agora a entrada do LLM para "pensar"
     st.session_state.hist.append(("typing", "digitando...", "pensando", None))
     _rerun()
 
