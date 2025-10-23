@@ -307,33 +307,46 @@ def should_search_web(text: str) -> bool:
     return False
 
 @st.cache_data(ttl=3600, show_spinner=False) # Cache de 1 hora
-@st.cache_data(ttl=3600, show_spinner=False) # Cache de 1 hora
 def web_search(query: str, max_results: int = 6):
-    """Busca web básica (APENAS snippets). Usada para endereços ou como base."""
+    """Busca web básica (APENAS snippets), com filtro de data para consultas 'recentes'."""
     
     l_query = query.lower()
-    # Verifica se a consulta é sobre notícias ou artigos
     is_news_query = any(tok in l_query for tok in ["notícia", "notícias", "artigo", "artigos", "g1", "reportagem", "matéria"])
 
-    # --- INÍCIO DA LÓGICA DE BUSCA APRIMORADA ---
+    # --- INÍCIO DA MUDANÇA ---
+    # 1. Define palavras-chave que ativam o filtro de data
+    RECENT_KEYWORDS = ["recente", "recentes", "última", "últimas", "agora", "hoje", "esta semana", "este mês"]
+    is_recent_query = any(tok in l_query for tok in RECENT_KEYWORDS)
+    
+    # 2. Define o limite de tempo (ex: '1m' para último mês) se for uma busca recente
+    tavily_time_range = "1m" if is_recent_query else None # Tavily: '1m' = último mês
+    ddgs_timelimit = "m" if is_recent_query else None   # DDGS: 'm' = último mês
+    # --- FIM DA MUDANÇA (Parte 1) ---
+
+    # Lógica de consulta (que já alteramos antes)
     if "senac" in l_query:
-        # A consulta já menciona "senac". Pesquise em toda a web. (Ex: "notícias senac g1")
         q = query
     elif is_news_query:
-        # A consulta é sobre notícias, mas não menciona "senac". Adicione "Senac" e pesquise em toda a web.
-        # (Ex: "notícias no g1" -> "Senac notícias no g1")
         q = f"Senac {query}"
     else:
-        # Consulta geral (cursos, horários, etc.). Restrinja aos sites do Senac.
         q = f"site:senacrs.com.br OR site:senac.br {query}"
-    # --- FIM DA LÓGICA DE BUSCA APRIMORADA ---
+    
 
     if TAVILY_KEY:
         try:
             from tavily import TavilyClient
             tv = TavilyClient(api_key=TAVILY_KEY)
-            # Usa a nova query 'q'
-            res = tv.search(query=q, max_results=max_results, search_depth="basic")
+            
+            # --- INÍCIO DA MUDANÇA (Parte 2) ---
+            # Adiciona o parâmetro 'time_range' à chamada da API
+            res = tv.search(
+                query=q, 
+                max_results=max_results, 
+                search_depth="basic",
+                time_range=tavily_time_range # <--- PARÂMETRO ADICIONADO
+            )
+            # --- FIM DA MUDANÇA (Parte 2) ---
+
             if isinstance(res, dict) and res.get("results"):
                 return [{"title": r.get("title"), "url": r.get("url"), "content": r.get("content")} for r in res["results"]]
         except Exception:
@@ -342,9 +355,18 @@ def web_search(query: str, max_results: int = 6):
     if DDGS is None: return []
     try:
         hits = []
-        # Usa a nova query 'q'
         with DDGS() as ddgs:
-            for r in ddgs.text(q, max_results=max_results):
+            
+            # --- INÍCIO DA MUDANÇA (Parte 3) ---
+            # Adiciona o parâmetro 'timelimit' à chamada da API
+            ddgs_results = ddgs.text(
+                q, 
+                max_results=max_results,
+                timelimit=ddgs_timelimit # <--- PARÂMETRO ADICIONADO
+            )
+            # --- FIM DA MUDANÇA (Parte 3) ---
+
+            for r in ddgs_results:
                 hits.append({"title": r.get("title"), "url": r.get("href") or r.get("url"), "content": r.get("body")})
         return hits
     except Exception:
@@ -784,6 +806,7 @@ if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_b
 
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
