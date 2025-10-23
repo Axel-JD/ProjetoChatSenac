@@ -1,9 +1,10 @@
 # app.py — Conecta Senac • Aprendiz
-# Versão para GitHub/Streamlit Cloud
+# Versão Final com SQLite, Lógica de Foco Senac e Modo Escuro Corrigido
 # ----------------------------------------------------------------------
 # Dependências: Streamlit, openai, tavily-python, ddgs, streamlit-mic-recorder
-# Persistência: Histórico e Contatos salvos em conecta_senac.db (SQLite)
+# Persistência: Histórico e Contatos salvos em conecta_senac.db (SQLite).
 # Foco: LLM é forçado a conectar perguntas off-topic ao Senac.
+# Tema: Modo Escuro altera o background de toda a aplicação (CSS corrigido).
 # ----------------------------------------------------------------------
 
 import os
@@ -20,7 +21,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # =========================
-# CONFIG / ASSETS / DB
+# CONFIG / ASSETS / DB (SQLITE)
 # =========================
 APP_TITLE = "Conecta Senac — Aprendiz"
 ASSETS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -103,6 +104,7 @@ def save_contact_to_db(db_path: str, name: str, email: str, raw_message: str) ->
         conn.close()
         return True
     except sqlite3.IntegrityError:
+        # Se o e-mail já existir
         return False 
     except Exception as e:
         print(f"Erro ao salvar contato no DB: {e}")
@@ -250,7 +252,7 @@ with st.sidebar:
         st.info("Para microfone no Cloud: adicione 'streamlit-mic-recorder' ao requirements.txt.")
 
 # =========================
-# TEMA / CSS
+# TEMA / CSS (FUNDO CORRIGIDO)
 # =========================
 DARK = st.session_state.dark_mode
 if DARK:
@@ -269,16 +271,20 @@ else:
 BASE_FONT_SIZE_REM = 0.985
 dynamic_font_size = BASE_FONT_SIZE_REM * st.session_state.font_size
 
-# --- INJEÇÃO CSS ---
 st.markdown(f"""
 <style>
 :root {{
-     --bg1:{COR_BG1}; --bg2:{COR_BG2}; --fundo:{COR_FUNDO}; --borda:{COR_BORDA};
-     --user:{COR_USER}; --userTxt:{COR_USER_TXT}; --bot:{COR_BOT}; --botTxt:{COR_BOT_TXT};
-     --link:{COR_LINK}; --h1:{HEADER_GRAD_1}; --h2:{HEADER_GRAD_2};
+  --bg1:{COR_BG1}; --bg2:{COR_BG2}; --fundo:{COR_FUNDO}; --borda:{COR_BORDA};
+  --user:{COR_USER}; --userTxt:{COR_USER_TXT}; --bot:{COR_BOT}; --botTxt:{COR_BOT_TXT};
+  --link:{COR_LINK}; --h1:{HEADER_GRAD_1}; --h2:{HEADER_GRAD_2};
 }}
 * {{ box-sizing: border-box; }}
-body {{ background: linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 100%) fixed; }}
+
+/* CORREÇÃO DO MODO ESCURO: Define o background da página e do stApp */
+body {{ background-color: var(--bg2); }} 
+.stApp {{ background-color: var(--bg2); background-attachment: fixed; }} 
+/* FIM DA CORREÇÃO */
+
 .wrap {{ width:100%; max-width:900px; margin:0 auto; }}
 .header {{ background: linear-gradient(135deg, var(--h1) 0%, var(--h2) 100%); color:#fff; padding:12px 14px; border-radius:16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }}
 .brand {{ display:flex; align-items:center; gap:12px; }}
