@@ -1,8 +1,9 @@
 # app.py — Conecta Senac • Aprendiz
-# Versão revertida (antes das customizações da barra de input e sugestões)
+# Versão Final Completa e Otimizada
 # ----------------------------------------------------------------------
-# Recursos: STT/Voz, Foco Senac, Leitura de Notícias (Trafilatura),
-# Filtros de Relevância e Data, UI de Chat Otimizada.
+# Recursos: STT/Voz (audio-recorder-streamlit + Whisper), Foco Senac, Tema Escuro Corrigido.
+# Otimizações: Cache na busca web (web_search) para melhor desempenho.
+# MODIFICADO: Adicionado scraping (leitura) de artigos com Trafilatura.
 # ----------------------------------------------------------------------
 
 import os
@@ -14,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 import io
-import tempfile
+import tempfile 
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -81,7 +82,7 @@ if API_KEY:
         from openai import OpenAI
         llm_client = OpenAI(api_key=API_KEY)
     except Exception as e:
-        pass
+        pass 
 
 try:
     from ddgs import DDGS
@@ -97,8 +98,8 @@ try:
     HAS_STT = True
 except Exception:
     HAS_STT = False
-
-# Imports para scraping (leitura) de artigos/notícias
+    
+# *** NOVO: Imports para scraping (leitura) de artigos/notícias ***
 try:
     import requests
     from trafilatura import fetch_url, extract
@@ -108,7 +109,7 @@ except Exception:
     requests = None
     fetch_url = None
     extract = None
-
+    
 # =========================
 # ESTADO
 # =========================
@@ -122,7 +123,7 @@ if "hist" not in st.session_state:
 if "awaiting_location" not in st.session_state:
     st.session_state.awaiting_location = False
 if "awaiting_contact" not in st.session_state:
-    st.session_state.awaiting_contact = False
+    st.session_state.awaiting_contact = False 
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
 if "font_size" not in st.session_state:
@@ -179,15 +180,15 @@ with st.sidebar:
     web_toggle = st.toggle("🔎 Ativar pesquisa web quando fizer sentido", value=True)
     st.caption(f"LLM: {'OpenAI' if llm_client else '⚠️ não configurado'}")
     st.caption(f"Busca: {'Tavily' if TAVILY_KEY else ('DDGS' if DDGS else '⚠️ indisponível')}")
-
+    
     # Diagnóstico e instrução
     st.caption(f"Status do Áudio: {'Sucesso' if HAS_STT else 'FALHA'}")
     if st.session_state.stt_enabled and not HAS_STT:
         st.error("Falha ao carregar o componente de microfone. Verifique o requirements.txt.")
-
-    # Diagnóstico do Scraper
+    
+    # *** NOVO: Diagnóstico do Scraper ***
     if web_toggle and not HAS_SCRAPER:
-        st.warning("Libs 'requests' ou 'trafilatura' não econtradas. A leitura de artigos está desativada. Verifique o requirements.txt e packages.txt.")
+        st.warning("Libs 'requests' ou 'trafilatura' não econtradas. A leitura de artigos está desativada. Verifique o requirements.txt.")
 
 # =========================
 # TEMA / CSS (FUNDO CORRIGIDO)
@@ -263,7 +264,7 @@ SUGESTOES = [
 ]
 cols = st.columns(len(SUGESTOES))
 for i, texto in enumerate(SUGESTOES):
-    if cols[i].button(texto, use_container_width=True, key=f"sug_{i}"):
+    if cols[i].button(texto, use_container_width=True):
         st.session_state.hist.append(("user", texto, None, None))
         st.session_state.hist.append(("typing", "digitando...", "pensando", None))
         _rerun()
@@ -289,7 +290,8 @@ def classify_scope_heuristic(text: str) -> str:
 # =========================
 # BUSCA WEB (Tavily → DDGS) + SCRAPING (LEITURA)
 # =========================
-EXPLICIT_SEARCH_TOKENS = ["pesquise", "pesquisa", "procurar", "procure", "buscar", "busque", "notícia", "notícias", "artigo", "artigos", "ler", "g1", "reportagem", "matéria"]
+# *** MODIFICADO: Adicionado "notícias" e "artigos" para ativar a leitura ***
+EXPLICIT_SEARCH_TOKENS = ["pesquise", "pesquisa", "procurar", "procure", "buscar", "busque", "notícia", "notícias", "artigo", "artigos", "ler"]
 ADDR_TOKENS = ["onde fica","endereço","endereco","unidade","unidades","localização","localizacao","perto de mim"]
 INFO_TOKENS = ["horário","horario","telefone","preço","valor","mensalidade","data","quando","link","site",
                "matrícula","inscrição","inscricao","grade curricular","carga horária","carga horaria"]
@@ -305,40 +307,39 @@ def should_search_web(text: str) -> bool:
 @st.cache_data(ttl=3600, show_spinner=False) # Cache de 1 hora
 def web_search(query: str, max_results: int = 6):
     """Busca web básica (APENAS snippets), com filtro de data para consultas 'recentes'."""
-
+    
     l_query = query.lower()
     is_news_query = any(tok in l_query for tok in ["notícia", "notícias", "artigo", "artigos", "g1", "reportagem", "matéria"])
 
+    # --- INÍCIO DA MUDANÇA ---
     # 1. Define palavras-chave que ativam o filtro de data
     RECENT_KEYWORDS = ["recente", "recentes", "última", "últimas", "agora", "hoje", "esta semana", "este mês"]
     is_recent_query = any(tok in l_query for tok in RECENT_KEYWORDS)
-
+    
     # 2. Define o limite de tempo (ex: '1m' para último mês) se for uma busca recente
     tavily_time_range = "1m" if is_recent_query else None # Tavily: '1m' = último mês
     ddgs_timelimit = "m" if is_recent_query else None   # DDGS: 'm' = último mês
+    # --- FIM DA MUDANÇA (Parte 1) ---
 
     # Lógica de consulta (que já alteramos antes)
     if "senac" in l_query:
-        # A consulta já menciona "senac". Pesquise em toda a web. (Ex: "notícias senac g1")
         q = query
     elif is_news_query:
-        # A consulta é sobre notícias, mas não menciona "senac". Adicione "Senac" e pesquise em toda a web.
-        # (Ex: "notícias no g1" -> "Senac notícias no g1")
         q = f"Senac {query}"
     else:
-        # Consulta geral (cursos, horários, etc.). Restrinja aos sites do Senac.
         q = f"site:senacrs.com.br OR site:senac.br {query}"
-
+    
 
     if TAVILY_KEY:
         try:
             from tavily import TavilyClient
             tv = TavilyClient(api_key=TAVILY_KEY)
-
+            
+            # --- INÍCIO DA MUDANÇA (Parte 2) ---
             # Adiciona o parâmetro 'time_range' à chamada da API
             res = tv.search(
-                query=q,
-                max_results=max_results,
+                query=q, 
+                max_results=max_results, 
                 search_depth="basic",
                 time_range=tavily_time_range # <--- PARÂMETRO ADICIONADO
             )
@@ -347,26 +348,28 @@ def web_search(query: str, max_results: int = 6):
                 return [{"title": r.get("title"), "url": r.get("url"), "content": r.get("content")} for r in res["results"]]
         except Exception:
             pass
-
+            
     if DDGS is None: return []
     try:
         hits = []
         with DDGS() as ddgs:
-
+            
+            # --- INÍCIO DA MUDANÇA (Parte 3) ---
             # Adiciona o parâmetro 'timelimit' à chamada da API
             ddgs_results = ddgs.text(
-                q,
+                q, 
                 max_results=max_results,
                 timelimit=ddgs_timelimit # <--- PARÂMETRO ADICIONADO
             )
+            # --- FIM DA MUDANÇA (Parte 3) ---
 
             for r in ddgs_results:
                 hits.append({"title": r.get("title"), "url": r.get("href") or r.get("url"), "content": r.get("body")})
         return hits
     except Exception:
         return []
-
-# Função helper para "ler" o conteúdo de artigos/notícias
+        
+# *** NOVO: Função helper para "ler" o conteúdo de artigos/notícias ***
 @st.cache_data(ttl=3600, show_spinner=False)
 def scrape_article_text(url: str) -> Optional[str]:
     """Tenta baixar e extrair o texto principal de uma URL usando Trafilatura."""
@@ -376,53 +379,73 @@ def scrape_article_text(url: str) -> Optional[str]:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
+        # Usamos requests pois o fetch_url nativo do trafilatura pode ser bloqueado
         response = requests.get(url, headers=headers, timeout=8, allow_redirects=True)
-        response.raise_for_status()
-
-        main_text = extract(response.content,
-                            include_comments=False,
+        response.raise_for_status() 
+        
+        main_text = extract(response.content, 
+                            include_comments=False, 
                             include_tables=False,
-                            no_fallback=True)
-
+                            no_fallback=True) # Evita pegar o HTML inteiro se falhar
+        
         return (main_text or "").strip()
     except Exception as e:
         return None # Falha silenciosa
 
-# Função principal para buscar E ler artigos
+# *** NOVO: Função principal para buscar E ler artigos ***
 @st.cache_data(ttl=3600, show_spinner=False)
 def search_and_read_articles(query: str, max_results: int = 4):
     """Busca na web, FILTRA, e depois tenta 'ler' cada resultado."""
-
+    
     # 1. Busca básica (links e snippets)
     # Pede 2 resultados a mais para ter uma margem para o filtro
-    basic_results = web_search(query, max_results + 2)
+    basic_results = web_search(query, max_results + 2) 
     if not basic_results:
         return []
-
+        
     # 2. Filtra os resultados para garantir que sejam sobre "Senac"
     filtered_results = []
     for r in basic_results:
         title = (r.get("title") or "").lower()
         url = (r.get("url") or "").lower()
-
+        
         # Só mantém o resultado se "senac" estiver no título ou na URL
+        # Isso remove resultados como "Senado", "Sena" (rio), etc.
         if "senac" in title or "senac" in url:
             filtered_results.append(r)
-
+    
     # Se o filtro removeu tudo, retorne vazio
     if not filtered_results:
         return []
+    # --- FIM DA MUDANÇA (Parte 1) ---
 
     # 3. Tenta ler cada URL FILTRADA
     advanced_results = []
     # Itera sobre 'filtered_results' e limita aos 'max_results' originais
-    for r in filtered_results[:max_results]:
+    for r in filtered_results[:max_results]: 
         snippet = r.get("content") or ""
         url = r.get("url")
         full_content = scrape_article_text(url)
-
+        
         final_content = full_content if (full_content and len(full_content) > len(snippet) * 1.5) else snippet
-
+        
+        advanced_results.append({
+            "title": r.get("title"),
+            "url": url,
+            "content": final_content
+        })
+    return advanced_results
+        
+    # 2. Tenta ler cada URL
+    advanced_results = []
+    for r in basic_results:
+        snippet = r.get("content") or ""
+        url = r.get("url")
+        full_content = scrape_article_text(url)
+        
+        # Usa o conteúdo lido se for significativamente maior que o snippet
+        final_content = full_content if (full_content and len(full_content) > len(snippet) * 1.5) else snippet
+        
         advanced_results.append({
             "title": r.get("title"),
             "url": url,
@@ -437,14 +460,16 @@ BASE_SISTEMA = (
     "Você é o Aprendiz, assistente do projeto Conecta Senac. Converse de forma natural, gentil e útil (PT-BR). "
     "Seu tom deve ser **sempre prestativo e positivo**. Dê preferência à emoção 'feliz' em suas respostas, a menos que o usuário esteja claramente frustrado ou confuso. "
     "Seu foco ABSOLUTO é no Senac (especialmente Senac RS), seus cursos/serviços, inscrições, EAD/presencial, unidades/endereços/horários, eventos, **notícias** e no próprio Aprendiz/Conecta Senac (small talk permitido). "
-
+    
     "Se a pergunta for alheia (ex: política, esportes) E **nenhum contexto de busca for fornecido**, você DEVE **redirecionar** ou **conectar** o assunto ao Senac. (Ex: 'Você me perguntou sobre [Assunto Geral], mas o Senac tem [Curso Relacionado].') "
-
+    
+    # --- INÍCIO DA MUDANÇA (Instrução de Formato) ---
     "Quando o usuário pedir por **notícias ou artigos** (ex: 'notícias do senac', 'resumo da notícia'), e o contexto da web for fornecido (com 'content' e 'url'), sua resposta DEVE seguir este formato:"
     "1.  Responda diretamente (ex: 'Sim, encontrei esta notícia...')."
     "2.  Forneça um **breve resumo** do artigo com base no texto lido (o 'content' do contexto)."
     "3.  Formate o link da fonte principal em markdown, assim: **[Título da Notícia](link.com)**."
     "NÃO liste links irrelevantes se eles não responderem à pergunta sobre a notícia."
+    # --- FIM DA MUDANÇA ---
 
     "Se o usuário demonstrar interesse (ex: 'Quero me inscrever', 'Me diga o próximo passo', 'Gostei e quero mais'), a próxima resposta DEVE ser uma pergunta para ele, verificando se você pode pegar o NOME e E-MAIL dele e armazenar para que o Senac entre em contato. "
     "Use os dados da web (contexto) quando fornecidos. O contexto pode conter o TEXTO COMPLETO de artigos/notícias. **Responda a pergunta do usuário com base nesse contexto.** "
@@ -479,14 +504,14 @@ def _last_msgs(limit_pairs: int = 6) -> List[Dict[str,str]]:
 def llm_json(messages: List[Dict[str,str]], temperature=0.35, max_tokens=500) -> dict:
     if llm_client is None:
         return {"emotion":"neutro","content":"⚠️ Para respostas completas, configure sua chave da OpenAI em secrets.toml."}
-
+    
     full_messages = [{"role":"system","content": BASE_SISTEMA}] + messages
-
+    
     try:
         response = llm_client.chat.completions.create(
-            model=OPENAI_MODEL,
+            model=OPENAI_MODEL, 
             messages=full_messages,
-            temperature=temperature,
+            temperature=temperature, 
             max_tokens=max_tokens
         )
         raw_text = (response.choices[0].message.content or "").strip()
@@ -504,14 +529,14 @@ def llm_json(messages: List[Dict[str,str]], temperature=0.35, max_tokens=500) ->
                 json_str = raw_text[start_index : end_index + 1]
             else:
                 return {"emotion": "feliz", "content": raw_text}
-
+        
         data = json.loads(json_str)
-
+        
         if "content" in data and "emotion" in data:
             return data
         else:
             return {"emotion": "feliz", "content": raw_text}
-
+            
     except (json.JSONDecodeError, IndexError):
         return {"emotion": "feliz", "content": raw_text}
 
@@ -525,9 +550,10 @@ def extract_city(text: str) -> str:
 def responder_endereco(cidade: str) -> list:
     q1 = f"site:senacrs.com.br unidades {cidade}"
     q2 = f"site:senac.br unidades {cidade}"
-    # Esta função usa a busca BÁSICA (rápida)
-    fontes = web_search(q1, 6) or []
+    # *** MODIFICAÇÃO: Garante que esta função use a busca BÁSICA (rápida) ***
+    fontes = web_search(q1, 6) or [] # web_search é a básica
     fontes += web_search(q2, 4) or []
+    # *** FIM DA MUDANÇA ***
     out, seen = [], set()
     for f in fontes:
         url = (f.get("url") or "").strip()
@@ -543,22 +569,22 @@ def gerar_resposta_json(pergunta: str, temperature: float):
     pl = p.lower()
     fontes: list = []
     msgs = _last_msgs()
-
+    
     # --- BLOCO 1: CAPTURA DE CONTATO (LEAD) ---
     if st.session_state.awaiting_contact:
         st.session_state.awaiting_contact = False
-
+        
         m_email = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', p)
         if m_email:
             email = m_email.group(0).lower()
             name_part = p[:m_email.start()].strip()
             name = name_part.split()[-1].title() if name_part else "Interessado"
-
+            
             # Resposta simulada de salvamento
             return {"emotion": "feliz", "content": f"Perfeito, **{name}**! O e-mail **{email}** foi processado. A equipe Senac entrará em contato em breve. Enquanto isso, mais alguma dúvida sobre nossos cursos?"}, []
         else:
             return {"emotion": "duvida", "content": "Não consegui identificar seu e-mail. Por favor, digite seu **NOME** e **E-MAIL** para contato, ou diga 'Não' se não quiser prosseguir."}, []
-
+    
     # --- BLOCO 2: INÍCIO DA CAPTURA (GATILHO) ---
     if any(k in pl for k in ["quero me inscrever", "proximo passo", "como me inscrevo", "gostei e quero mais", "quero começar"]):
         st.session_state.awaiting_contact = True
@@ -571,15 +597,17 @@ def gerar_resposta_json(pergunta: str, temperature: float):
             st.session_state.awaiting_location = True
             return {"emotion":"feliz","content":"Para localizar certinho, me diz a **cidade** (e o estado, se for fora do RS). 😉"}, []
         else:
+            # Se a cidade já foi dada (ex: "onde fica senac porto alegre"), busca direto
             if web_toggle:
                 fontes = responder_endereco(city) # Usa a busca BÁSICA
+            # Continua para o Bloco 5 para formatar a resposta...
 
     if st.session_state.awaiting_location and not any(k in pl for k in ["senac","curso","inscri","pagamento","unidade","matrícula","ead"]):
         st.session_state.awaiting_location = False
         city = p.title()
         if web_toggle:
             fontes = responder_endereco(city) # Usa a busca BÁSICA
-
+        
         if fontes:
             ctx = "\n".join([f"[{i+1}] {h['title']} — {h['url']}\n{(h.get('content') or '')[:600]}" for i,h in enumerate(fontes)])
             msgs.insert(0, {"role":"system","content":"Contexto de pesquisa:\n"+ctx})
@@ -589,7 +617,7 @@ def gerar_resposta_json(pergunta: str, temperature: float):
 
     # --- BLOCO 4: GATILHO DE REDIRECIONAMENTO (FORÇAR FOCO) ---
     scope = classify_scope_heuristic(p)
-
+    
     if scope == "off":
         msgs.insert(0, {"role":"system",
                         "content": f"A pergunta do usuário '{p}' está fora do escopo Senac. Você DEVE usar a sua resposta para gentilmente redirecionar ou conectar o assunto ao contexto de cursos/serviços do Senac. **Exemplo:** 'Vi que você perguntou sobre [Assunto]. O Senac oferece [Curso Relacionado] que pode te ajudar. Fale mais sobre isso!'"
@@ -600,15 +628,18 @@ def gerar_resposta_json(pergunta: str, temperature: float):
                        })
 
     # --- BLOCO 5: BUSCA WEB E RESPOSTA FINAL ---
+    # *** MODIFICADO: Chama a função de leitura de artigos ***
     # (Só roda se 'fontes' não foi preenchido pelo Bloco 3)
     if not fontes and web_toggle and should_search_web(p):
         fontes = search_and_read_articles(p, 5) # Chama a nova função de LEITURA
+    # *** FIM DA MUDANÇA ***
 
     if fontes:
-        # Trunca o conteúdo (que pode ser longo) antes de enviar ao LLM
+        # *** MODIFICADO: Trunca o conteúdo (que pode ser longo) antes de enviar ao LLM ***
         ctx = "\n".join([f"[{i+1}] {h['title']} — {h['url']}\n{(h.get('content') or '')[:1500]}" for i,h in enumerate(fontes)])
+        # *** FIM DA MUDANÇA ***
         msgs.insert(0, {"role":"system","content":"Contexto de pesquisa:\n"+ctx})
-
+        
     msgs.append({"role":"user","content": p})
 
     payload = llm_json(msgs, temperature=temperature)
@@ -645,15 +676,18 @@ for who, msg, emo, fontes in st.session_state.hist:
             "</div>",
             unsafe_allow_html=True
         )
-
+        
         # --- LÓGICA INTELIGENTE DE LINKS ---
         # 1. Verifica se a IA já formatou um link de notícia (ex: [Título](http...))
+        #    dentro da própria mensagem.
         is_news_response = re.search(r'\[.*?\]\(http.*?\)', msg)
-
+        
         # 2. Só mostre a lista de links se:
         #    a) Houver fontes E
-        #    b) NÃO for uma resposta de notícia (para esconder links irrelevantes)
+        #    b) NÃO for uma resposta de notícia (para esconder links "lixo" como
+        #       Trump, Enem, etc.)
         if fontes and not is_news_response:
+            # Isso agora SÓ vai rodar para perguntas "Padrão" (cursos, etc.)
             links = "".join([f"<li><a href='{f.get('url','')}' target='_blank'>{f.get('title','Fonte')}</a></li>" for f in fontes if f.get('url')])
             if links:
                 st.markdown(f"<ul class='link-list' style='margin:6px 0 10px 50px'>{links}</ul>", unsafe_allow_html=True)
@@ -693,135 +727,119 @@ if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
         if who == "user":
             pergunta = msg
             break
-
+            
     payload, fontes = gerar_resposta_json(pergunta, st.session_state.get("temperature", 0.35))
-
+    
     final_content = (payload.get("content") or "Desculpe, não consegui processar a resposta.").strip()
-    emotion = payload.get("emotion", "feliz") # Pega a emoção da IA
-
-    # Força a emoção "feliz" se a IA sugerir "neutro"
-    if emotion == "neutro":
-        emotion = "feliz"
+    emotion = payload.get("emotion", "feliz")
 
     valid_emotions = ["feliz", "neutro", "pensando", "triste", "duvida"]
     final_emotion = emotion if emotion in valid_emotions else "feliz"
-
+    
     try:
         _ = _save_json({"emotion": final_emotion, "content": final_content}, fontes)
     except Exception:
         pass
-
+        
     st.session_state.hist[-1] = ("bot", final_content or "Posso te ajudar com algo do Senac? 🙂", final_emotion, fontes)
-
+    
     if st.session_state.tts_enabled and final_content:
         text_to_speech_component(final_content)
-
+    
     _rerun()
 
 # =========================
-# BARRA DE ENTRADA (FIXA E ESTILIZADA COM CSS)
+# BARRA DE ENTRADA (chat_input + MICROFONE COM WHISPER)
 # =========================
+st.markdown("<div class='input-bar'></div>", unsafe_allow_html=True)
 
 audio_bytes: Optional[bytes] = None
 mic_txt: Optional[str] = None
-user_msg: Optional[str] = None
+user_msg = None
 
-# Inicia o contêiner fixo
-st.markdown("<div class='fixed-input-container'><div class='fixed-input-inner'>", unsafe_allow_html=True)
-
-# Layout de 3 colunas
-col1, col2, col3 = st.columns([0.75, 0.125, 0.125]) # 75% Texto, 12.5% Voz, 12.5% Limpar
-
-with col1:
-    # 1. st.text_input para a barra com bordas suaves
-    user_msg = st.text_input(
-        "Digite sua mensagem...", # O label será ocultado pelo CSS
-        key="chat_text_input",
-        placeholder="Digite sua mensagem..."
+# Apenas mostra o gravador se a funcionalidade estiver ativada E o componente carregado
+if st.session_state.stt_enabled and HAS_STT:
+    
+    # O audio_recorder cria o botão e retorna os bytes do áudio gravado
+    audio_bytes = audio_recorder(
+        text="", 
+        recording_color="#e8612c", 
+        neutral_color="#cccccc",
+        icon_size="2x",
+        key="audio_recorder_input"
     )
 
-with col2:
-    # 2. Botão de áudio
-    if st.session_state.stt_enabled and HAS_STT:
-        with st.container():
-            audio_bytes = audio_recorder(
-                text="",
-                recording_color="#e8612c",
-                neutral_color="#cccccc",
-                icon_size="1.5x",
-                key="audio_recorder_input"
-            )
-    else:
-        st.write("") # Espaço reservado
+    if audio_bytes:
+        # Tenta transcrever o áudio usando a API Whisper
+        if llm_client:
+            tmp_file_path = None
+            try:
+                # 1. Salva os bytes em um arquivo temporário
+                # O formato .wav é o mais compatível com o audio-recorder-streamlit
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+                    tmp_file.write(audio_bytes)
+                    tmp_file_path = tmp_file.name
 
-with col3:
-    # 3. Botão de Limpar Conversa
-    if st.button("🧹", key="clear_chat_bottom_bar", use_container_width=True):
-        st.session_state.hist = [("bot", "Conversa limpa! Quer falar sobre cursos, inscrição, EAD, unidades ou conhecer melhor o Aprendiz? 🙂", "feliz", None)]
-        st.session_state.awaiting_location = False
-        st.session_state.awaiting_contact = False
-        if "chat_text_input" in st.session_state:
-            st.session_state.chat_text_input = ""
-        _rerun()
+                # 2. Chama a API Whisper
+                with open(tmp_file_path, "rb") as audio_file:
+                    with st.spinner("🎧 Transcrevendo áudio..."):
+                        transcricao_obj = llm_client.audio.transcriptions.create(
+                            model="whisper-1", 
+                            file=audio_file,
+                            language="pt" # Define a linguagem para melhorar a precisão
+                        )
+                        mic_txt = transcricao_obj.text
+                        
+                        # Adiciona a transcrição como mensagem do usuário no histórico
+                        st.session_state.hist.append(("user", mic_txt, None, None))
+                        
+            except Exception as e:
+                # Log de erro caso a transcrição falhe
+                mic_txt = "Transcrição falhou: Ocorreu um erro na API Whisper."
+                st.error(f"Erro na transcrição Whisper. Verifique sua chave e permissões.")
+            finally:
+                # 3. Limpa o arquivo temporário
+                if tmp_file_path and os.path.exists(tmp_file_path):
+                    os.remove(tmp_file_path)
+                
+        else:
+            # Fallback se a chave OpenAI não estiver configurada
+            st.error("Chave OpenAI é necessária para transcrever com Whisper.")
+            mic_txt = None # Não permite que o chat prossiga
 
-# Fecha os contêineres
-st.markdown("</div></div>", unsafe_allow_html=True)
+
+# Chat input principal
+user_msg = st.chat_input("Digite sua mensagem…")
 
 
-# --- LÓGICA DE PROCESSAMENTO (PERMANECE IGUAL) ---
-
-# 3. Lógica de Transcrição
-if audio_bytes and llm_client:
-    tmp_file_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-            tmp_file.write(audio_bytes)
-            tmp_file_path = tmp_file.name
-
-        with open(tmp_file_path, "rb") as audio_file:
-            with st.spinner("🎧 Transcrevendo áudio..."):
-                transcricao_obj = llm_client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language="pt"
-                )
-                mic_txt = transcricao_obj.text
-                st.session_state.hist.append(("user", mic_txt, None, None))
-
-    except Exception as e:
-        mic_txt = "Transcrição falhou: Ocorreu um erro na API Whisper."
-        st.error(f"Erro na transcrição Whisper. Verifique sua chave e permissões.")
-    finally:
-        if tmp_file_path and os.path.exists(tmp_file_path):
-            os.remove(tmp_file_path)
-
-elif audio_bytes:
-     st.error("Chave OpenAI é necessária para transcrever com Whisper.")
-     mic_txt = None
-
-# 4. Processamento da Mensagem (Voz ou Texto)
-msg_to_process = None
-
+# Processamento da Mensagem (Voz ou Texto)
+msg = None
 if mic_txt and mic_txt.strip():
-    # Mensagem veio da VOZ
-    msg_to_process = mic_txt.strip()
-    if "chat_text_input" in st.session_state:
-        st.session_state.chat_text_input = ""
+    # Se mic_txt tem conteúdo, ele já foi adicionado ao histórico no bloco acima
+    msg = mic_txt.strip()
 elif user_msg and user_msg.strip():
-    # Mensagem veio do TEXTO (Enter)
-    msg_to_process = user_msg.strip()
-    st.session_state.hist.append(("user", msg_to_process, None, None))
-    if "chat_text_input" in st.session_state:
-        st.session_state.chat_text_input = ""
+    msg = user_msg.strip()
+    st.session_state.hist.append(("user", msg, None, None))
 
-if msg_to_process:
+
+if msg:
     st.session_state.hist.append(("typing", "digitando...", "pensando", None))
     _rerun()
 
 # =========================
 # RODAPÉ - LIMPO
 # =========================
-# O botão de limpar foi movido para a barra de entrada
+if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_bottom"):
+    st.session_state.hist = [("bot", "Conversa limpa! Quer falar sobre cursos, inscrição, EAD, unidades ou conhecer melhor o Aprendiz? 🙂", "feliz", None)]
+    st.session_state.awaiting_location = False
+    st.session_state.awaiting_contact = False
+    _rerun()
+
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
+
+
+
+
+
 
