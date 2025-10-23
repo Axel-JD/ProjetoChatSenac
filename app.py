@@ -1,9 +1,8 @@
 # app.py — Conecta Senac • Aprendiz
-# Versão Final Completa e Otimizada
+# Versão revertida (antes das customizações da barra de input e sugestões)
 # ----------------------------------------------------------------------
 # Recursos: STT/Voz, Foco Senac, Leitura de Notícias (Trafilatura),
 # Filtros de Relevância e Data, UI de Chat Otimizada.
-# CORREÇÃO: Barra de Input Fixa com 3 botões (Texto, Voz, Limpar) e fundo escuro.
 # ----------------------------------------------------------------------
 
 import os
@@ -15,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 import io
-import tempfile 
+import tempfile
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -82,7 +81,7 @@ if API_KEY:
         from openai import OpenAI
         llm_client = OpenAI(api_key=API_KEY)
     except Exception as e:
-        pass 
+        pass
 
 try:
     from ddgs import DDGS
@@ -98,7 +97,7 @@ try:
     HAS_STT = True
 except Exception:
     HAS_STT = False
-    
+
 # Imports para scraping (leitura) de artigos/notícias
 try:
     import requests
@@ -109,7 +108,7 @@ except Exception:
     requests = None
     fetch_url = None
     extract = None
-    
+
 # =========================
 # ESTADO
 # =========================
@@ -123,7 +122,7 @@ if "hist" not in st.session_state:
 if "awaiting_location" not in st.session_state:
     st.session_state.awaiting_location = False
 if "awaiting_contact" not in st.session_state:
-    st.session_state.awaiting_contact = False 
+    st.session_state.awaiting_contact = False
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
 if "font_size" not in st.session_state:
@@ -180,12 +179,12 @@ with st.sidebar:
     web_toggle = st.toggle("🔎 Ativar pesquisa web quando fizer sentido", value=True)
     st.caption(f"LLM: {'OpenAI' if llm_client else '⚠️ não configurado'}")
     st.caption(f"Busca: {'Tavily' if TAVILY_KEY else ('DDGS' if DDGS else '⚠️ indisponível')}")
-    
+
     # Diagnóstico e instrução
     st.caption(f"Status do Áudio: {'Sucesso' if HAS_STT else 'FALHA'}")
     if st.session_state.stt_enabled and not HAS_STT:
         st.error("Falha ao carregar o componente de microfone. Verifique o requirements.txt.")
-    
+
     # Diagnóstico do Scraper
     if web_toggle and not HAS_SCRAPER:
         st.warning("Libs 'requests' ou 'trafilatura' não econtradas. A leitura de artigos está desativada. Verifique o requirements.txt e packages.txt.")
@@ -200,18 +199,12 @@ if DARK:
     COR_USER = "#1e40af"; COR_USER_TXT = "#e5e7eb" # Texto do usuário (Branco no modo escuro)
     COR_BOT = "#F47920"; COR_BOT_TXT = "#111827"
     COR_LINK = "#93c5fd"; HEADER_GRAD_1, HEADER_GRAD_2 = "#0e4e9b", "#2567c4"
-    COR_SUG_BG = COR_USER; COR_SUG_TXT = COR_USER_TXT;
-    # --- MUDANÇA: Fundo da Barra ---
-    COR_BARRA_FUNDO = COR_BG2 # Escuro
 else:
     COR_BG1, COR_BG2 = "#fbfdff", "#eef3fb"
     COR_FUNDO = "#F7F9FC"; COR_BORDA = "#0E4E9B"
     COR_USER = "#0E4E9B"; COR_USER_TXT = "#111827" # Texto do usuário (Preto no modo claro)
     COR_BOT = "#F47920"; COR_BOT_TXT = "#FFFFFF"
     COR_LINK = "#0A66C2"; HEADER_GRAD_1, HEADER_GRAD_2 = "#0e4e9b", "#2567c4"
-    COR_SUG_BG = COR_USER; COR_SUG_TXT = COR_USER_TXT;
-    # --- MUDANÇA: Fundo da Barra ---
-    COR_BARRA_FUNDO = "#E5E7EB" # Cinza (Mais escuro que a página)
 
 BASE_FONT_SIZE_REM = 0.985
 dynamic_font_size = BASE_FONT_SIZE_REM * st.session_state.font_size
@@ -222,14 +215,12 @@ st.markdown(f"""
   --bg1:{COR_BG1}; --bg2:{COR_BG2}; --fundo:{COR_FUNDO}; --borda:{COR_BORDA};
   --user:{COR_USER}; --userTxt:{COR_USER_TXT}; --bot:{COR_BOT}; --botTxt:{COR_BOT_TXT};
   --link:{COR_LINK}; --h1:{HEADER_GRAD_1}; --h2:{HEADER_GRAD_2};
-  --sugBg:{COR_SUG_BG}; --sugTxt:{COR_SUG_TXT};
-  --barraFundo:{COR_BARRA_FUNDO};
 }}
 * {{ box-sizing: border-box; }}
 
 /* CORREÇÃO DO MODO ESCURO: Define o background da página e do stApp */
-body {{ background-color: var(--bg2); }} 
-.stApp {{ background-color: var(--bg2); background-attachment: fixed; }} 
+body {{ background-color: var(--bg2); }}
+.stApp {{ background-color: var(--bg2); background-attachment: fixed; }}
 /* FIM DA CORREÇÃO */
 
 .wrap {{ width:100%; max-width:900px; margin:0 auto; }}
@@ -251,124 +242,7 @@ body {{ background-color: var(--bg2); }}
 .dot:nth-child(2) {{ animation-delay:.2s; }} .dot:nth-child(3) {{ animation-delay:.4s; }}
 @keyframes blink {{ 0%, 80%, 100% {{ transform: scale(0); opacity: .3; }} 40% {{ transform: scale(1); opacity: 1; }} }}
 a {{ color:var(--link); text-decoration:none; }} a:hover {{ text-decoration:underline; }}
-
-
-/* --- SUGESTÕES RÁPIDAS (COM ALTURA IGUAL) --- */
-.sugestoes {{
-    margin-top: 10px;
-}}
-.sugestoes h4 {{
-    font-weight: 600;
-    color: var(--borda);
-    margin-bottom: 6px;
-    font-size: 1rem;
-}}
-.sugestoes div[data-testid="stHorizontalBlock"] {{
-    display: flex;
-    align-items: stretch; /* Faz todas as colunas terem a mesma altura */
-}}
-.sugestoes div[data-testid="stButton"] {{
-    height: 100%; 
-}}
-div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button {{
-    background-color: var(--sugBg);
-    color: var(--sugTxt);
-    border: 1px solid rgba(0,0,0,0.1);
-    border-radius: 12px;
-    height: 100%; /* Preenche a altura do contêiner */
-    width: 100%;
-    font-size: 0.85rem;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    text-align: center;
-    padding: 10px 5px; /* Adiciona padding interno */
-}}
-div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button:hover {{
-    background-color: var(--sugBg);
-    color: var(--sugTxt);
-    opacity: 0.85; 
-    border: 1px solid var(--sugBg);
-}}
-/* --- FIM SUGESTÕES --- */
-
-
-/* --- INÍCIO DO CÓDIGO DA BARRA FIXA --- */
-.chat-box {{
-    padding-bottom: 120px; /* Aumenta o padding para a barra fixa não cobrir a última mensagem */
-}}
-.input-bar {{
-    display: none; /* Oculta o placeholder original */
-}}
-.fixed-input-container {{
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background-color: var(--barraFundo); /* --- MUDANÇA: Fundo mais escuro --- */
-    border-top: 1px solid var(--borda);
-    padding: 12px 0px; /* Espaçamento vertical */
-    z-index: 999;
-    display: flex;
-    justify-content: center;
-}}
-.fixed-input-inner {{
-    width: 100%;
-    max-width: 900px; /* Mesma largura do .wrap */
-    display: flex;
-    align-items: center; /* Alinha o input e o botão verticalmente */
-    gap: 8px; /* --- MUDANÇA: Espaço reduzido --- */
-    padding: 0 15px; /* Espaçamento lateral */
-}}
-/* Remove o label (título) do st.text_input */
-.fixed-input-inner div[data-testid="stTextInput"] label {{
-    display: none;
-}}
-/* Estiliza o st.text_input com BORDAS SUAVES e Fundo Escuro */
-.fixed-input-inner div[data-testid="stTextInput"] > div {{
-    border-radius: 25px !important; /* Bordas suaves */
-    background-color: var(--fundo); /* Cor de fundo da caixa de chat */
-}}
-/* Cor do placeholder (ex: "Digite sua mensagem...") */
-.fixed-input-inner div[data-testid="stTextInput"] ::-webkit-input-placeholder {{
-    color: #999;
-}}
-/* Cor do texto digitado */
-.fixed-input-inner div[data-testid="stTextInput"] input {{
-    color: var(--botTxt); 
-}}
-/* Hack para o iframe do audio_recorder */
-.fixed-input-inner iframe {{
-    transform: scale(0.9); /* Ícone um pouco menor */
-    height: 50px !important; /* Impede que estique */
-    width: 50px !important;
-    margin-top: -10px; /* Ajuste fino de alinhamento */
-    border: none; /* Remove borda do iframe */
-    background: transparent; /* Fundo transparente */
-}}
-/* Esconde a barra preta feia do audio_recorder */
-.fixed-input-inner iframe html body {{
-    background: transparent !important;
-}}
-/* --- MUDANÇA: Estiliza o botão "Limpar conversa" (agora 🧹) na barra --- */
-.fixed-input-inner div[data-testid="stButton"] button[kind="secondary"] {{
-    background-color: var(--fundo);
-    color: var(--botTxt);
-    border: 1px solid var(--borda);
-    border-radius: 50% !important; /* Botão redondo */
-    height: 48px;
-    width: 48px;
-    font-size: 1.1rem;
-    padding: 0;
-    margin-top: -10px; /* Alinhamento vertical */
-    margin-left: 2px; /* Pequeno espaço */
-}}
-.fixed-input-inner div[data-testid="stButton"] button[kind="secondary"]:hover {{
-    opacity: 0.8;
-    border: 1px solid var(--borda);
-    color: var(--botTxt);
-}}
-/* --- FIM DO CÓDIGO DA BARRA FIXA --- */
+.input-bar {{ margin-top:10px; }} /* Espaço para a barra de input abaixo */
 
 </style>
 """, unsafe_allow_html=True)
@@ -431,18 +305,18 @@ def should_search_web(text: str) -> bool:
 @st.cache_data(ttl=3600, show_spinner=False) # Cache de 1 hora
 def web_search(query: str, max_results: int = 6):
     """Busca web básica (APENAS snippets), com filtro de data para consultas 'recentes'."""
-    
+
     l_query = query.lower()
     is_news_query = any(tok in l_query for tok in ["notícia", "notícias", "artigo", "artigos", "g1", "reportagem", "matéria"])
 
     # 1. Define palavras-chave que ativam o filtro de data
     RECENT_KEYWORDS = ["recente", "recentes", "última", "últimas", "agora", "hoje", "esta semana", "este mês"]
     is_recent_query = any(tok in l_query for tok in RECENT_KEYWORDS)
-    
+
     # 2. Define o limite de tempo (ex: '1m' para último mês) se for uma busca recente
     tavily_time_range = "1m" if is_recent_query else None # Tavily: '1m' = último mês
     ddgs_timelimit = "m" if is_recent_query else None   # DDGS: 'm' = último mês
-    
+
     # Lógica de consulta (que já alteramos antes)
     if "senac" in l_query:
         # A consulta já menciona "senac". Pesquise em toda a web. (Ex: "notícias senac g1")
@@ -454,17 +328,17 @@ def web_search(query: str, max_results: int = 6):
     else:
         # Consulta geral (cursos, horários, etc.). Restrinja aos sites do Senac.
         q = f"site:senacrs.com.br OR site:senac.br {query}"
-    
+
 
     if TAVILY_KEY:
         try:
             from tavily import TavilyClient
             tv = TavilyClient(api_key=TAVILY_KEY)
-            
+
             # Adiciona o parâmetro 'time_range' à chamada da API
             res = tv.search(
-                query=q, 
-                max_results=max_results, 
+                query=q,
+                max_results=max_results,
                 search_depth="basic",
                 time_range=tavily_time_range # <--- PARÂMETRO ADICIONADO
             )
@@ -473,15 +347,15 @@ def web_search(query: str, max_results: int = 6):
                 return [{"title": r.get("title"), "url": r.get("url"), "content": r.get("content")} for r in res["results"]]
         except Exception:
             pass
-            
+
     if DDGS is None: return []
     try:
         hits = []
         with DDGS() as ddgs:
-            
+
             # Adiciona o parâmetro 'timelimit' à chamada da API
             ddgs_results = ddgs.text(
-                q, 
+                q,
                 max_results=max_results,
                 timelimit=ddgs_timelimit # <--- PARÂMETRO ADICIONADO
             )
@@ -503,13 +377,13 @@ def scrape_article_text(url: str) -> Optional[str]:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         response = requests.get(url, headers=headers, timeout=8, allow_redirects=True)
-        response.raise_for_status() 
-        
-        main_text = extract(response.content, 
-                            include_comments=False, 
+        response.raise_for_status()
+
+        main_text = extract(response.content,
+                            include_comments=False,
                             include_tables=False,
                             no_fallback=True)
-        
+
         return (main_text or "").strip()
     except Exception as e:
         return None # Falha silenciosa
@@ -518,23 +392,23 @@ def scrape_article_text(url: str) -> Optional[str]:
 @st.cache_data(ttl=3600, show_spinner=False)
 def search_and_read_articles(query: str, max_results: int = 4):
     """Busca na web, FILTRA, e depois tenta 'ler' cada resultado."""
-    
+
     # 1. Busca básica (links e snippets)
     # Pede 2 resultados a mais para ter uma margem para o filtro
-    basic_results = web_search(query, max_results + 2) 
+    basic_results = web_search(query, max_results + 2)
     if not basic_results:
         return []
-        
+
     # 2. Filtra os resultados para garantir que sejam sobre "Senac"
     filtered_results = []
     for r in basic_results:
         title = (r.get("title") or "").lower()
         url = (r.get("url") or "").lower()
-        
+
         # Só mantém o resultado se "senac" estiver no título ou na URL
         if "senac" in title or "senac" in url:
             filtered_results.append(r)
-    
+
     # Se o filtro removeu tudo, retorne vazio
     if not filtered_results:
         return []
@@ -542,13 +416,13 @@ def search_and_read_articles(query: str, max_results: int = 4):
     # 3. Tenta ler cada URL FILTRADA
     advanced_results = []
     # Itera sobre 'filtered_results' e limita aos 'max_results' originais
-    for r in filtered_results[:max_results]: 
+    for r in filtered_results[:max_results]:
         snippet = r.get("content") or ""
         url = r.get("url")
         full_content = scrape_article_text(url)
-        
+
         final_content = full_content if (full_content and len(full_content) > len(snippet) * 1.5) else snippet
-        
+
         advanced_results.append({
             "title": r.get("title"),
             "url": url,
@@ -563,9 +437,9 @@ BASE_SISTEMA = (
     "Você é o Aprendiz, assistente do projeto Conecta Senac. Converse de forma natural, gentil e útil (PT-BR). "
     "Seu tom deve ser **sempre prestativo e positivo**. Dê preferência à emoção 'feliz' em suas respostas, a menos que o usuário esteja claramente frustrado ou confuso. "
     "Seu foco ABSOLUTO é no Senac (especialmente Senac RS), seus cursos/serviços, inscrições, EAD/presencial, unidades/endereços/horários, eventos, **notícias** e no próprio Aprendiz/Conecta Senac (small talk permitido). "
-    
+
     "Se a pergunta for alheia (ex: política, esportes) E **nenhum contexto de busca for fornecido**, você DEVE **redirecionar** ou **conectar** o assunto ao Senac. (Ex: 'Você me perguntou sobre [Assunto Geral], mas o Senac tem [Curso Relacionado].') "
-    
+
     "Quando o usuário pedir por **notícias ou artigos** (ex: 'notícias do senac', 'resumo da notícia'), e o contexto da web for fornecido (com 'content' e 'url'), sua resposta DEVE seguir este formato:"
     "1.  Responda diretamente (ex: 'Sim, encontrei esta notícia...')."
     "2.  Forneça um **breve resumo** do artigo com base no texto lido (o 'content' do contexto)."
@@ -605,14 +479,14 @@ def _last_msgs(limit_pairs: int = 6) -> List[Dict[str,str]]:
 def llm_json(messages: List[Dict[str,str]], temperature=0.35, max_tokens=500) -> dict:
     if llm_client is None:
         return {"emotion":"neutro","content":"⚠️ Para respostas completas, configure sua chave da OpenAI em secrets.toml."}
-    
+
     full_messages = [{"role":"system","content": BASE_SISTEMA}] + messages
-    
+
     try:
         response = llm_client.chat.completions.create(
-            model=OPENAI_MODEL, 
+            model=OPENAI_MODEL,
             messages=full_messages,
-            temperature=temperature, 
+            temperature=temperature,
             max_tokens=max_tokens
         )
         raw_text = (response.choices[0].message.content or "").strip()
@@ -630,14 +504,14 @@ def llm_json(messages: List[Dict[str,str]], temperature=0.35, max_tokens=500) ->
                 json_str = raw_text[start_index : end_index + 1]
             else:
                 return {"emotion": "feliz", "content": raw_text}
-        
+
         data = json.loads(json_str)
-        
+
         if "content" in data and "emotion" in data:
             return data
         else:
             return {"emotion": "feliz", "content": raw_text}
-            
+
     except (json.JSONDecodeError, IndexError):
         return {"emotion": "feliz", "content": raw_text}
 
@@ -669,22 +543,22 @@ def gerar_resposta_json(pergunta: str, temperature: float):
     pl = p.lower()
     fontes: list = []
     msgs = _last_msgs()
-    
+
     # --- BLOCO 1: CAPTURA DE CONTATO (LEAD) ---
     if st.session_state.awaiting_contact:
         st.session_state.awaiting_contact = False
-        
+
         m_email = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', p)
         if m_email:
             email = m_email.group(0).lower()
             name_part = p[:m_email.start()].strip()
             name = name_part.split()[-1].title() if name_part else "Interessado"
-            
+
             # Resposta simulada de salvamento
             return {"emotion": "feliz", "content": f"Perfeito, **{name}**! O e-mail **{email}** foi processado. A equipe Senac entrará em contato em breve. Enquanto isso, mais alguma dúvida sobre nossos cursos?"}, []
         else:
             return {"emotion": "duvida", "content": "Não consegui identificar seu e-mail. Por favor, digite seu **NOME** e **E-MAIL** para contato, ou diga 'Não' se não quiser prosseguir."}, []
-    
+
     # --- BLOCO 2: INÍCIO DA CAPTURA (GATILHO) ---
     if any(k in pl for k in ["quero me inscrever", "proximo passo", "como me inscrevo", "gostei e quero mais", "quero começar"]):
         st.session_state.awaiting_contact = True
@@ -705,7 +579,7 @@ def gerar_resposta_json(pergunta: str, temperature: float):
         city = p.title()
         if web_toggle:
             fontes = responder_endereco(city) # Usa a busca BÁSICA
-        
+
         if fontes:
             ctx = "\n".join([f"[{i+1}] {h['title']} — {h['url']}\n{(h.get('content') or '')[:600]}" for i,h in enumerate(fontes)])
             msgs.insert(0, {"role":"system","content":"Contexto de pesquisa:\n"+ctx})
@@ -715,7 +589,7 @@ def gerar_resposta_json(pergunta: str, temperature: float):
 
     # --- BLOCO 4: GATILHO DE REDIRECIONAMENTO (FORÇAR FOCO) ---
     scope = classify_scope_heuristic(p)
-    
+
     if scope == "off":
         msgs.insert(0, {"role":"system",
                         "content": f"A pergunta do usuário '{p}' está fora do escopo Senac. Você DEVE usar a sua resposta para gentilmente redirecionar ou conectar o assunto ao contexto de cursos/serviços do Senac. **Exemplo:** 'Vi que você perguntou sobre [Assunto]. O Senac oferece [Curso Relacionado] que pode te ajudar. Fale mais sobre isso!'"
@@ -734,7 +608,7 @@ def gerar_resposta_json(pergunta: str, temperature: float):
         # Trunca o conteúdo (que pode ser longo) antes de enviar ao LLM
         ctx = "\n".join([f"[{i+1}] {h['title']} — {h['url']}\n{(h.get('content') or '')[:1500]}" for i,h in enumerate(fontes)])
         msgs.insert(0, {"role":"system","content":"Contexto de pesquisa:\n"+ctx})
-        
+
     msgs.append({"role":"user","content": p})
 
     payload = llm_json(msgs, temperature=temperature)
@@ -771,11 +645,11 @@ for who, msg, emo, fontes in st.session_state.hist:
             "</div>",
             unsafe_allow_html=True
         )
-        
+
         # --- LÓGICA INTELIGENTE DE LINKS ---
         # 1. Verifica se a IA já formatou um link de notícia (ex: [Título](http...))
         is_news_response = re.search(r'\[.*?\]\(http.*?\)', msg)
-        
+
         # 2. Só mostre a lista de links se:
         #    a) Houver fontes E
         #    b) NÃO for uma resposta de notícia (para esconder links irrelevantes)
@@ -819,9 +693,9 @@ if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
         if who == "user":
             pergunta = msg
             break
-            
+
     payload, fontes = gerar_resposta_json(pergunta, st.session_state.get("temperature", 0.35))
-    
+
     final_content = (payload.get("content") or "Desculpe, não consegui processar a resposta.").strip()
     emotion = payload.get("emotion", "feliz") # Pega a emoção da IA
 
@@ -831,17 +705,17 @@ if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
 
     valid_emotions = ["feliz", "neutro", "pensando", "triste", "duvida"]
     final_emotion = emotion if emotion in valid_emotions else "feliz"
-    
+
     try:
         _ = _save_json({"emotion": final_emotion, "content": final_content}, fontes)
     except Exception:
         pass
-        
+
     st.session_state.hist[-1] = ("bot", final_content or "Posso te ajudar com algo do Senac? 🙂", final_emotion, fontes)
-    
+
     if st.session_state.tts_enabled and final_content:
         text_to_speech_component(final_content)
-    
+
     _rerun()
 
 # =========================
@@ -855,7 +729,7 @@ user_msg: Optional[str] = None
 # Inicia o contêiner fixo
 st.markdown("<div class='fixed-input-container'><div class='fixed-input-inner'>", unsafe_allow_html=True)
 
-# --- MUDANÇA: Layout de 3 colunas ---
+# Layout de 3 colunas
 col1, col2, col3 = st.columns([0.75, 0.125, 0.125]) # 75% Texto, 12.5% Voz, 12.5% Limpar
 
 with col1:
@@ -871,8 +745,8 @@ with col2:
     if st.session_state.stt_enabled and HAS_STT:
         with st.container():
             audio_bytes = audio_recorder(
-                text="", 
-                recording_color="#e8612c", 
+                text="",
+                recording_color="#e8612c",
                 neutral_color="#cccccc",
                 icon_size="1.5x",
                 key="audio_recorder_input"
@@ -880,7 +754,6 @@ with col2:
     else:
         st.write("") # Espaço reservado
 
-# --- MUDANÇA: Botão Limpar movido para a barra ---
 with col3:
     # 3. Botão de Limpar Conversa
     if st.button("🧹", key="clear_chat_bottom_bar", use_container_width=True):
@@ -888,9 +761,8 @@ with col3:
         st.session_state.awaiting_location = False
         st.session_state.awaiting_contact = False
         if "chat_text_input" in st.session_state:
-            st.session_state.chat_text_input = "" 
+            st.session_state.chat_text_input = ""
         _rerun()
-# --- FIM DA MUDANÇA ---
 
 # Fecha os contêineres
 st.markdown("</div></div>", unsafe_allow_html=True)
@@ -909,20 +781,20 @@ if audio_bytes and llm_client:
         with open(tmp_file_path, "rb") as audio_file:
             with st.spinner("🎧 Transcrevendo áudio..."):
                 transcricao_obj = llm_client.audio.transcriptions.create(
-                    model="whisper-1", 
+                    model="whisper-1",
                     file=audio_file,
                     language="pt"
                 )
                 mic_txt = transcricao_obj.text
                 st.session_state.hist.append(("user", mic_txt, None, None))
-                
+
     except Exception as e:
         mic_txt = "Transcrição falhou: Ocorreu um erro na API Whisper."
         st.error(f"Erro na transcrição Whisper. Verifique sua chave e permissões.")
     finally:
         if tmp_file_path and os.path.exists(tmp_file_path):
             os.remove(tmp_file_path)
-            
+
 elif audio_bytes:
      st.error("Chave OpenAI é necessária para transcrever com Whisper.")
      mic_txt = None
@@ -934,14 +806,14 @@ if mic_txt and mic_txt.strip():
     # Mensagem veio da VOZ
     msg_to_process = mic_txt.strip()
     if "chat_text_input" in st.session_state:
-        st.session_state.chat_text_input = "" 
+        st.session_state.chat_text_input = ""
 elif user_msg and user_msg.strip():
     # Mensagem veio do TEXTO (Enter)
     msg_to_process = user_msg.strip()
     st.session_state.hist.append(("user", msg_to_process, None, None))
     if "chat_text_input" in st.session_state:
-        st.session_state.chat_text_input = "" 
-    
+        st.session_state.chat_text_input = ""
+
 if msg_to_process:
     st.session_state.hist.append(("typing", "digitando...", "pensando", None))
     _rerun()
@@ -949,9 +821,6 @@ if msg_to_process:
 # =========================
 # RODAPÉ - LIMPO
 # =========================
-# --- MUDANÇA: O botão de limpar foi movido para a barra de entrada ---
-# st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_bottom") # <- REMOVIDO
-# --- FIM DA MUDANÇA ---
-
+# O botão de limpar foi movido para a barra de entrada
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
