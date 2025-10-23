@@ -403,9 +403,6 @@ def search_and_read_articles(query: str, max_results: int = 4):
 # =========================
 # PROMPTS / LLM (sempre JSON)
 # =========================
-# =========================
-# PROMPTS / LLM (sempre JSON)
-# =========================
 BASE_SISTEMA = (
     "Você é o Aprendiz, assistente do projeto Conecta Senac. Converse de forma natural, gentil e útil (PT-BR). "
     "Seu tom deve ser **sempre prestativo e positivo**. Dê preferência à emoção 'feliz' em suas respostas, a menos que o usuário esteja claramente frustrado ou confuso. "
@@ -626,10 +623,16 @@ for who, msg, emo, fontes in st.session_state.hist:
             "</div>",
             unsafe_allow_html=True
         )
-        if fontes:
+        
+        # --- INÍCIO DA MUDANÇA ---
+        # Só mostre a lista de links brutos se a IA já não tiver
+        # formatado um link de notícia dentro da própria mensagem.
+        # Isso evita links duplicados e irrelevantes.
+        if fontes and not re.search(r'\[.*?\]\(http.*?\)', msg):
             links = "".join([f"<li><a href='{f.get('url','')}' target='_blank'>{f.get('title','Fonte')}</a></li>" for f in fontes if f.get('url')])
             if links:
                 st.markdown(f"<ul class='link-list' style='margin:6px 0 10px 50px'>{links}</ul>", unsafe_allow_html=True)
+        # --- FIM DA MUDANÇA ---
 
 st.markdown("</div>", unsafe_allow_html=True)
 components.html("<script>const box=parent.document.querySelector('#chat'); if(box){box.scrollTop=box.scrollHeight;}</script>", height=0)
@@ -775,6 +778,7 @@ if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_b
 
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
