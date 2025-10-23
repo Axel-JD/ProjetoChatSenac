@@ -749,80 +749,95 @@ if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
     _rerun()
 
 # =========================
-# BARRA DE ENTRADA (chat_input + MICROFONE COM WHISPER)
+# BARRA DE ENTRADA (st.text_input + MICROFONE LADO A LADO)
 # =========================
 st.markdown("<div class='input-bar'></div>", unsafe_allow_html=True)
 
 audio_bytes: Optional[bytes] = None
 mic_txt: Optional[str] = None
-user_msg = None
+user_msg: Optional[str] = None # Virá do st.text_input
 
-# Apenas mostra o gravador se a funcionalidade estiver ativada E o componente carregado
-if st.session_state.stt_enabled and HAS_STT:
-    
-    # O audio_recorder cria o botão e retorna os bytes do áudio gravado
-    audio_bytes = audio_recorder(
-        text="", 
-        recording_color="#e8612c", 
-        neutral_color="#cccccc",
-        icon_size="2x",
-        key="audio_recorder_input"
+# --- INÍCIO DA MUDANÇA: Layout em Colunas ---
+
+# Cria colunas: 90% para o texto, 10% para o microfone
+col1, col2 = st.columns([0.9, 0.1])
+
+with col1:
+    # 1. Substitui st.chat_input por st.text_input
+    # O valor é submetido quando o usuário pressiona "Enter"
+    user_msg = st.text_input(
+        "Digite sua mensagem ou use o microfone...", 
+        key="chat_text_input", # Chave para limpar o campo
+        placeholder="Digite sua mensagem ou use o microfone..."
     )
 
-    if audio_bytes:
-        # Tenta transcrever o áudio usando a API Whisper
-        if llm_client:
-            tmp_file_path = None
-            try:
-                # 1. Salva os bytes em um arquivo temporário
-                # O formato .wav é o mais compatível com o audio-recorder-streamlit
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-                    tmp_file.write(audio_bytes)
-                    tmp_file_path = tmp_file.name
+with col2:
+    # 2. Posiciona o botão de áudio na coluna da direita
+    # Adiciona um pouco de espaço no topo para alinhar (ajuste manual)
+    st.markdown("<div style='padding-top: 29px;'></div>", unsafe_allow_html=True) 
+    if st.session_state.stt_enabled and HAS_STT:
+        audio_bytes = audio_recorder(
+            text="", 
+            recording_color="#e8612c", 
+            neutral_color="#cccccc",
+            icon_size="1.5x", # Ícone um pouco menor
+            key="audio_recorder_input"
+        )
+    
+# 3. Lógica de Transcrição (movida para fora da coluna)
+if audio_bytes and llm_client:
+    tmp_file_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+            tmp_file.write(audio_bytes)
+            tmp_file_path = tmp_file.name
 
-                # 2. Chama a API Whisper
-                with open(tmp_file_path, "rb") as audio_file:
-                    with st.spinner("🎧 Transcrevendo áudio..."):
-                        transcricao_obj = llm_client.audio.transcriptions.create(
-                            model="whisper-1", 
-                            file=audio_file,
-                            language="pt" # Define a linguagem para melhorar a precisão
-                        )
-                        mic_txt = transcricao_obj.text
-                        
-                        # Adiciona a transcrição como mensagem do usuário no histórico
-                        st.session_state.hist.append(("user", mic_txt, None, None))
-                        
-            except Exception as e:
-                # Log de erro caso a transcrição falhe
-                mic_txt = "Transcrição falhou: Ocorreu um erro na API Whisper."
-                st.error(f"Erro na transcrição Whisper. Verifique sua chave e permissões.")
-            finally:
-                # 3. Limpa o arquivo temporário
-                if tmp_file_path and os.path.exists(tmp_file_path):
-                    os.remove(tmp_file_path)
+        with open(tmp_file_path, "rb") as audio_file:
+            with st.spinner("🎧 Transcrevendo áudio..."):
+                transcricao_obj = llm_client.audio.transcriptions.create(
+                    model="whisper-1", 
+                    file=audio_file,
+                    language="pt"
+                )
+                mic_txt = transcricao_obj.text
                 
-        else:
-            # Fallback se a chave OpenAI não estiver configurada
-            st.error("Chave OpenAI é necessária para transcrever com Whisper.")
-            mic_txt = None # Não permite que o chat prossiga
+                # Adiciona a transcrição como mensagem do usuário
+                st.session_state.hist.append(("user", mic_txt, None, None))
+                
+    except Exception as e:
+        mic_txt = "Transcrição falhou: Ocorreu um erro na API Whisper."
+        st.error(f"Erro na transcrição Whisper. Verifique sua chave e permissões.")
+    finally:
+        if tmp_file_path and os.path.exists(tmp_file_path):
+            os.remove(tmp_file_path)
+            
+elif audio_bytes:
+     st.error("Chave OpenAI é necessária para transcrever com Whisper.")
+     mic_txt = None
 
-
-# Chat input principal
-user_msg = st.chat_input("Digite sua mensagem…")
+# --- FIM DA MUDANÇA ---
 
 
 # Processamento da Mensagem (Voz ou Texto)
-msg = None
+msg_to_process = None
+
 if mic_txt and mic_txt.strip():
-    # Se mic_txt tem conteúdo, ele já foi adicionado ao histórico no bloco acima
-    msg = mic_txt.strip()
+    # Mensagem veio da VOZ
+    msg_to_process = mic_txt.strip()
+    # Limpa o input de texto (se houver algo)
+    if "chat_text_input" in st.session_state:
+        st.session_state.chat_text_input = "" 
+
 elif user_msg and user_msg.strip():
-    msg = user_msg.strip()
-    st.session_state.hist.append(("user", msg, None, None))
+    # Mensagem veio do TEXTO (usuário pressionou Enter)
+    msg_to_process = user_msg.strip()
+    st.session_state.hist.append(("user", msg_to_process, None, None))
+    # Limpa o input de texto
+    if "chat_text_input" in st.session_state:
+        st.session_state.chat_text_input = "" 
+    
 
-
-if msg:
+if msg_to_process:
     st.session_state.hist.append(("typing", "digitando...", "pensando", None))
     _rerun()
 
@@ -837,6 +852,7 @@ if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_b
 
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
