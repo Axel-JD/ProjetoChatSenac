@@ -3,6 +3,7 @@
 # ----------------------------------------------------------------------
 # Recursos: STT/Voz (audio-recorder-streamlit + Whisper), Foco Senac, Tema Escuro Corrigido.
 # Otimizações: Cache na busca web (web_search) para melhor desempenho.
+# MODIFICADO: web_search agora usa newspaper3k para ler o conteúdo de notícias/artigos.
 # ----------------------------------------------------------------------
 
 import os
@@ -98,6 +99,17 @@ try:
 except Exception:
     HAS_STT = False
     
+# *** NOVO: Imports para scraping (leitura) de artigos/notícias ***
+try:
+    import requests
+    from newspaper import Article
+    HAS_SCRAPER = True
+except Exception:
+    HAS_SCRAPER = False
+    requests = None
+    Article = None
+# *** FIM DA MUDANÇA ***
+    
 # =========================
 # ESTADO
 # =========================
@@ -173,6 +185,9 @@ with st.sidebar:
     st.caption(f"Status do Áudio: {'Sucesso' if HAS_STT else 'FALHA'}")
     if st.session_state.stt_enabled and not HAS_STT:
         st.error("Falha ao carregar o componente de microfone. Verifique o requirements.txt.")
+    # NOVO: Diagnóstico do Scraper
+    if web_toggle and not HAS_SCRAPER:
+        st.warning("Libs 'requests' ou 'newspaper3k' não econtradas. A leitura de artigos/notícias está desativada.")
 
 # =========================
 # TEMA / CSS (FUNDO CORRIGIDO)
@@ -272,9 +287,10 @@ def classify_scope_heuristic(text: str) -> str:
     return "off"
 
 # =========================
-# BUSCA WEB (Tavily → DDGS)
+# BUSCA WEB (Tavily → DDGS) + SCRAPING (LEITURA)
 # =========================
-EXPLICIT_SEARCH_TOKENS = ["pesquise", "pesquisa", "procurar", "procure", "buscar", "busque"]
+# *** MODIFICADO: Adicionado "notícias" e "artigos" para ativar a busca ***
+EXPLICIT_SEARCH_TOKENS = ["pesquise", "pesquisa", "procurar", "procure", "buscar", "busque", "notícias", "artigos", "noticia", "artigo"]
 ADDR_TOKENS = ["onde fica","endereço","endereco","unidade","unidades","localização","localizacao","perto de mim"]
 INFO_TOKENS = ["horário","horario","telefone","preço","valor","mensalidade","data","quando","link","site",
                "matrícula","inscrição","inscricao","grade curricular","carga horária","carga horaria"]
@@ -287,28 +303,87 @@ def should_search_web(text: str) -> bool:
             return True
     return False
 
+# *** NOVO: Função helper para "ler" o conteúdo de artigos/notícias ***
+@st.cache_data(ttl=3600, show_spinner=False)
+def scrape_article_text(url: str) -> str:
+    """Tenta baixar e extrair o texto principal de uma URL."""
+    if not url or not HAS_SCRAPER:
+        return ""
+    try:
+        # 1. Usa requests para baixar com timeout e user-agent
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'}
+        response = requests.get(url, timeout=7, headers=headers, allow_redirects=True)
+        response.raise_for_status() # Lança erro se a requisição falhar
+        
+        # 2. Usa newspaper3k para extrair o texto principal do HTML baixado
+        article = Article(url)
+        article.set_html(response.content) # Fornece o HTML baixado
+        article.parse()
+        
+        # Retorna o texto limpo
+        return (article.text or "").strip()
+    except Exception:
+        return "" # Falha silenciosa, retorna vazio
+
+# *** MODIFICADO: web_search agora tenta LER o conteúdo da URL ***
 @st.cache_data(ttl=3600, show_spinner=False) # Cache de 1 hora
-def web_search(query: str, max_results: int = 6):
+def web_search(query: str, max_results: int = 5): # Reduzido para 5 para focar na qualidade do scrape
+    """Busca na web e tenta extrair o conteúdo completo das URLs encontradas."""
+    results_with_content = []
+    
+    # --- TENTATIVA 1: TAVILY ---
     if TAVILY_KEY:
         try:
             from tavily import TavilyClient
             tv = TavilyClient(api_key=TAVILY_KEY)
             q = query if "senac" in query.lower() else f"site:senacrs.com.br OR site:senac.br {query}"
+            # Usamos 'search' que retorna snippets (content)
             res = tv.search(query=q, max_results=max_results, search_depth="basic")
+            
             if isinstance(res, dict) and res.get("results"):
-                return [{"title": r.get("title"), "url": r.get("url"), "content": r.get("content")} for r in res["results"]]
+                for r in res["results"]:
+                    url = r.get("url")
+                    snippet = r.get("content") or ""
+                    
+                    # Tenta ler o artigo; se falhar ou for curto, usa o snippet
+                    full_content = scrape_article_text(url)
+                    results_with_content.append({
+                        "title": r.get("title"), 
+                        "url": url, 
+                        "content": full_content if len(full_content) > len(snippet) * 1.5 else snippet
+                    })
+                return results_with_content
         except Exception:
-            pass
+            pass # Falha, tenta DDGS
+
+    # --- TENTATIVA 2: DDGS (Fallback) ---
     if DDGS is None: return []
     try:
         hits = []
         q = query if "senac" in query.lower() else f"site:senacrs.com.br {query}"
+        
+        ddgs_results = []
         with DDGS() as ddgs:
+            # ddgs.text retorna um gerador, pegamos os max_results
             for r in ddgs.text(q, max_results=max_results):
-                hits.append({"title": r.get("title"), "url": r.get("href") or r.get("url"), "content": r.get("body")})
+                ddgs_results.append(r)
+
+        for r in ddgs_results:
+            url = r.get("href") or r.get("url")
+            snippet = r.get("body") or ""
+            
+            # Tenta ler o artigo; se falhar ou for curto, usa o snippet
+            full_content = scrape_article_text(url)
+            hits.append({
+                "title": r.get("title"), 
+                "url": url, 
+                "content": full_content if len(full_content) > len(snippet) * 1.5 else snippet
+            })
         return hits
     except Exception:
-        return []
+        return [] # Falha final
+# *** FIM DAS MODIFICAÇÕES NA BUSCA WEB ***
+
 
 # =========================
 # PROMPTS / LLM (sempre JSON)
@@ -318,7 +393,8 @@ BASE_SISTEMA = (
     "Seu foco ABSOLUTO é no Senac (especialmente Senac RS), seus cursos/serviços, inscrições, EAD/presencial, unidades/endereços/horários, eventos e no próprio Aprendiz/Conecta Senac (small talk permitido). "
     "NÃO responda perguntas que não tenham ligação com o Senac. Se a pergunta for alheia, você DEVE **redirecionar** ou **conectar** o assunto ao Senac na sua resposta. (Ex: 'Você me perguntou sobre [Assunto Geral], mas o Senac tem [Curso Relacionado].') "
     "Se o usuário demonstrar interesse (ex: 'Quero me inscrever', 'Me diga o próximo passo', 'Gostei e quero mais'), a próxima resposta DEVE ser uma pergunta para ele, verificando se você pode pegar o NOME e E-MAIL dele e armazenar para que o Senac entre em contato. "
-    "Evite pesquisas desnecessárias. Só use dados da web quando receber do sistema um contexto com links/trechos. "
+    # MODIFICADO: Instrução para usar o conteúdo lido (scrape)
+    "Use os dados da web (contexto) quando fornecidos. O contexto pode conter o TEXTO COMPLETO de artigos ou notícias; use essa informação para responder em detalhes, mas seja conciso e cite as fontes. "
     "Para endereços/unidades, NUNCA adivinhe: peça a cidade se faltar; se houver fontes, cite links. "
     "Formate ESTRITAMENTE como JSON válido (sem texto fora do JSON): "
     '{"emotion":"feliz|neutro|triste|duvida","content":"<markdown conciso>"}'
@@ -358,7 +434,7 @@ def llm_json(messages: List[Dict[str,str]], temperature=0.35, max_tokens=500) ->
             model=OPENAI_MODEL, 
             messages=full_messages,
             temperature=temperature, 
-            max_tokens=max_tokens
+            max_tokens=max_tokens # Aumentado ligeiramente para respostas com base em artigos
         )
         raw_text = (response.choices[0].message.content or "").strip()
     except Exception as e:
@@ -396,13 +472,43 @@ def extract_city(text: str) -> str:
 def responder_endereco(cidade: str) -> list:
     q1 = f"site:senacrs.com.br unidades {cidade}"
     q2 = f"site:senac.br unidades {cidade}"
-    fontes = web_search(q1, 6) or []
-    fontes += web_search(q2, 4) or []
+    # A busca de endereço não precisa ler o artigo, usamos max_results=6 e a busca normal
+    
+    fontes_tavily = []
+    if TAVILY_KEY:
+        try:
+            from tavily import TavilyClient
+            tv = TavilyClient(api_key=TAVILY_KEY)
+            res1 = tv.search(query=q1, max_results=4, search_depth="basic")
+            res2 = tv.search(query=q2, max_results=2, search_depth="basic")
+            if isinstance(res1, dict) and res1.get("results"):
+                fontes_tavily.extend(res1["results"])
+            if isinstance(res2, dict) and res2.get("results"):
+                fontes_tavily.extend(res2["results"])
+        except Exception:
+            pass
+
+    fontes_ddgs = []
+    if not fontes_tavily and DDGS:
+        try:
+            with DDGS() as ddgs:
+                fontes_ddgs.extend(list(ddgs.text(q1, max_results=4)))
+                fontes_ddgs.extend(list(ddgs.text(q2, max_results=2)))
+        except Exception:
+            pass
+
+    fontes_raw = fontes_tavily or fontes_ddgs
     out, seen = [], set()
-    for f in fontes:
-        url = (f.get("url") or "").strip()
+    
+    for f in fontes_raw:
+        url = (f.get("url") or f.get("href") or "").strip()
         if not url or url in seen: continue
-        seen.add(url); out.append({"title": (f.get("title") or 'Fonte').strip(), "url": url, "content": f.get("content")})
+        seen.add(url)
+        out.append({
+            "title": (f.get("title") or 'Fonte').strip(), 
+            "url": url, 
+            "content": f.get("content") or f.get("body") or ""
+        })
     return out
 
 # =========================
@@ -440,17 +546,24 @@ def gerar_resposta_json(pergunta: str, temperature: float):
         if not city:
             st.session_state.awaiting_location = True
             return {"emotion":"feliz","content":"Para localizar certinho, me diz a **cidade** (e o estado, se for fora do RS). 😉"}, []
+        else:
+            # Se a cidade já foi dada (ex: "onde fica senac porto alegre"), busca direto
+            if web_toggle:
+                fontes = responder_endereco(city)
+            # Continua para o Bloco 5 para formatar a resposta
 
     if st.session_state.awaiting_location and not any(k in pl for k in ["senac","curso","inscri","pagamento","unidade","matrícula","ead"]):
         st.session_state.awaiting_location = False
         city = p.title()
         if web_toggle:
+            # Usa a função específica de endereço que não faz scraping
             fontes = responder_endereco(city)
         
         if fontes:
+            # Limita o contexto para não estourar (600 chars por fonte)
             ctx = "\n".join([f"[{i+1}] {h['title']} — {h['url']}\n{(h.get('content') or '')[:600]}" for i,h in enumerate(fontes)])
-            msgs.insert(0, {"role":"system","content":"Contexto de pesquisa:\n"+ctx})
-        msgs.append({"role":"user","content": f"O usuário informou a cidade: {city}. Oriente sem inventar e cite links confiáveis se possível."})
+            msgs.insert(0, {"role":"system","content":"Contexto de pesquisa (Endereços):\n"+ctx})
+        msgs.append({"role":"user","content": f"O usuário informou a cidade: {city}. Oriente sobre endereços/unidades nessa cidade sem inventar e cite links confiáveis se possível."})
         payload = llm_json(msgs, temperature=temperature)
         return payload, fontes
 
@@ -466,13 +579,17 @@ def gerar_resposta_json(pergunta: str, temperature: float):
                         "content": "A pergunta é geral (carreira, tecnologia, etc.); conecte naturalmente ao contexto do Senac/Conecta Senac/Aprendiz, dando ênfase a cursos relevantes."
                        })
 
-    # --- BLOCO 5: BUSCA WEB E RESPOSTA FINAL ---
-    if web_toggle and should_search_web(p):
-        fontes = web_search(p, 6)
+    # --- BLOCO 5: BUSCA WEB (COM LEITURA) E RESPOSTA FINAL ---
+    # Se fontes ainda não foram preenchidas (ex: Bloco 3 não rodou)
+    if not fontes and web_toggle and should_search_web(p):
+        # Usa a nova web_search que LÊ os artigos
+        fontes = web_search(p, 5) # max_results=5
 
     if fontes:
-        ctx = "\n".join([f"[{i+1}] {h['title']} — {h['url']}\n{(h.get('content') or '')[:600]}" for i,h in enumerate(fontes)])
-        msgs.insert(0, {"role":"system","content":"Contexto de pesquisa:\n"+ctx})
+        # Limita o contexto para não estourar (1500 chars por artigo)
+        # Este é o local que agora recebe o texto completo do artigo
+        ctx = "\n".join([f"[{i+1}] {h['title']} — {h['url']}\n{(h.get('content') or '')[:1500]}" for i,h in enumerate(fontes)])
+        msgs.insert(0, {"role":"system","content":"Contexto de pesquisa (Artigos/Notícias):\n"+ctx})
         
     msgs.append({"role":"user","content": p})
 
