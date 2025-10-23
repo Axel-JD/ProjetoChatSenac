@@ -5,6 +5,7 @@
 # Persistência: Histórico e Contatos salvos em conecta_senac.db (SQLite).
 # Foco: LLM é forçado a conectar perguntas off-topic ao Senac.
 # Tema: Modo Escuro altera o background de toda a aplicação (CSS corrigido).
+# UI: Mensagens de "microfone off" removidas do corpo principal, mantendo dica APENAS na sidebar.
 # ----------------------------------------------------------------------
 
 import os
@@ -248,6 +249,7 @@ with st.sidebar:
     web_toggle = st.toggle("🔎 Ativar pesquisa web quando fizer sentido", value=True)
     st.caption(f"LLM: {'OpenAI' if llm_client else '⚠️ não configurado'}")
     st.caption(f"Busca: {'Tavily' if TAVILY_KEY else ('DDGS' if DDGS else '⚠️ indisponível')}")
+    # ÚNICA INFORMAÇÃO DE INSTALAÇÃO DO MICROFONE FICA AQUI
     if st.session_state.stt_enabled and not HAS_STT:
         st.info("Para microfone no Cloud: adicione 'streamlit-mic-recorder' ao requirements.txt.")
 
@@ -653,31 +655,29 @@ if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
     _rerun()
 
 # =========================
-# BARRA DE ENTRADA (chat_input + MICROFONE)
+# BARRA DE ENTRADA (chat_input + MICROFONE) - UI LIMPA
 # =========================
 st.markdown("<div class='input-bar'></div>", unsafe_allow_html=True)
 
 mic_txt: Optional[str] = None
-with st.container():
-    c_mic, c_hint = st.columns([0.18, 0.82])
-    with c_mic:
-        if st.session_state.stt_enabled:
-            if HAS_STT:
-                mic_txt = speech_to_text(
-                    language="pt-BR",
-                    start_prompt="🎤 Falar",
-                    stop_prompt="⏹️ Parar",
-                    just_once=True,
-                    use_container_width=True,
-                    key="stt_inline_top",
-                )
-            else:
-                st.markdown("<div class='fake-mic'>🎤 microfone off</div>", unsafe_allow_html=True)
-                st.caption("Adicione `streamlit-mic-recorder` ao requirements.txt e redeploy.")
-        else:
-            st.markdown("<div class='fake-mic'>🎤 microfone off</div>", unsafe_allow_html=True)
-    with c_hint:
-        st.caption("Dica: ative o microfone na barra lateral e permita no navegador.")
+c_mic, c_hint = st.columns([0.18, 0.82])
+
+with c_mic:
+    # Apenas exibe o botão se STT estiver ativado E o pacote instalado
+    if st.session_state.stt_enabled and HAS_STT:
+        mic_txt = speech_to_text(
+            language="pt-BR",
+            start_prompt="🎤 Falar",
+            stop_prompt="⏹️ Parar",
+            just_once=True,
+            use_container_width=True,
+            key="stt_inline_top",
+        )
+    # Nenhuma mensagem de "microfone off" ou instalação é exibida aqui.
+
+with c_hint:
+    # Removemos qualquer dica para limpar o espaço.
+    pass 
 
 user_msg = st.chat_input("Digite sua mensagem…")
 
@@ -700,7 +700,7 @@ if msg:
 # =========================
 if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_bottom"):
     st.session_state.hist = [("bot", "Conversa limpa! Quer falar sobre cursos, inscrição, EAD, unidades ou conhecer melhor o Aprendiz? 🙂", "feliz", None)]
-    st.session_state.awaiting_location = False
+    st.session_session_state.awaiting_location = False
     st.session_state.awaiting_contact = False
     _rerun()
 
