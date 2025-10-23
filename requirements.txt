@@ -3,3 +3,6 @@ openai>=1.30
 tavily-python>=0.3
 ddgs>=2.3.2
 audio-recorder-streamlit
+newspaper3k
+beautifulsoup4
+requests
