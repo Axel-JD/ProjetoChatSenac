@@ -3,4 +3,12 @@ openai>=1.30
 tavily-python>=0.3
 ddgs>=2.3.2
 audio-recorder-streamlit
-
+streamlit>=1.34
+openai>=1.30
+tavily-python>=0.3
+ddgs>=2.3.2
+audio-recorder-streamlit>=0.1.7
+newspaper3k
+beautifulsoup4
+requests
+trafilatura  #
