@@ -219,73 +219,6 @@ st.markdown(f"""
 }}
 * {{ box-sizing: border-box; }}
 
-/* Adiciona espaço na parte inferior da caixa de chat para a barra fixa */
-.chat-box {
-    /* Aumenta o padding para a barra fixa não cobrir a última mensagem */
-    padding-bottom: 120px;
-}
-
-/* Oculta a barra de entrada que fizemos antes (a que rola) */
-.input-bar {
-    display: none;
-}
-
-/* --- Barra de Entrada Fixa Personalizada --- */
-.fixed-input-container {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background-color: var(--bg2); /* Usa a cor de fundo do tema */
-    border-top: 1px solid var(--borda);
-    padding: 12px 0px; /* Espaçamento vertical */
-    z-index: 999;
-    
-    /* Centraliza o conteúdo interno */
-    display: flex;
-    justify-content: center;
-}
-
-.fixed-input-inner {
-    width: 100%;
-    max-width: 900px; /* Mesma largura do .wrap */
-    display: flex;
-    align-items: center; /* Alinha o input e o botão verticalmente */
-    gap: 10px; /* Espaço entre o input e o botão */
-    padding: 0 15px; /* Espaçamento lateral */
-}
-
-/* Remove o label (título) do st.text_input */
-.fixed-input-inner div[data-testid="stTextInput"] label {
-    display: none;
-}
-
-/* Estiliza o st.text_input com BORDAS SUAVES */
-.fixed-input-inner div[data-testid="stTextInput"] > div {
-    border-radius: 25px !important; /* Bordas suaves */
-    background-color: var(--fundo); /* Cor de fundo da caixa de chat */
-}
-
-/* Contêiner do botão de áudio */
-.fixed-input-inner .stButton {
-    max-height: 50px; /* Impede que o botão estique */
-}
-
-/* Hack para o iframe do audio_recorder */
-.fixed-input-inner iframe {
-    transform: scale(0.9); /* Ícone um pouco menor */
-    height: 50px !important; /* Impede que estique */
-    width: 50px !important;
-    margin-top: -10px; /* Ajuste fino de alinhamento */
-    border: none; /* Remove borda do iframe */
-    background: transparent; /* Fundo transparente */
-}
-
-/* Esconde a barra preta feia do audio_recorder */
-.fixed-input-inner iframe html body {
-    background: transparent !important;
-}
-
 /* CORREÇÃO DO MODO ESCURO: Define o background da página e do stApp */
 body {{ background-color: var(--bg2); }} 
 .stApp {{ background-color: var(--bg2); background-attachment: fixed; }} 
@@ -312,6 +245,78 @@ body {{ background-color: var(--bg2); }}
 a {{ color:var(--link); text-decoration:none; }} a:hover {{ text-decoration:underline; }}
 .input-bar {{ margin-top:10px; }}
 .fake-mic {{ display:flex; align-items:center; justify-content:center; height:38px; border:1px dashed #bbb; border-radius:8px; color:#888; font-size:14px; }}
+
+
+/* --- INÍCIO DO NOVO CÓDIGO DA BARRA FIXA --- */
+
+/* Adiciona espaço na parte inferior da caixa de chat para a barra fixa */
+.chat-box {{
+    /* Aumenta o padding para a barra fixa não cobrir a última mensagem */
+    padding-bottom: 120px;
+}}
+
+/* Oculta a barra de entrada que fizemos antes (a que rola) */
+.input-bar {{
+    display: none;
+}}
+
+/* --- Barra de Entrada Fixa Personalizada --- */
+.fixed-input-container {{
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: var(--bg2); /* Usa a cor de fundo do tema */
+    border-top: 1px solid var(--borda);
+    padding: 12px 0px; /* Espaçamento vertical */
+    z-index: 999;
+    
+    /* Centraliza o conteúdo interno */
+    display: flex;
+    justify-content: center;
+}}
+
+.fixed-input-inner {{
+    width: 100%;
+    max-width: 900px; /* Mesma largura do .wrap */
+    display: flex;
+    align-items: center; /* Alinha o input e o botão verticalmente */
+    gap: 10px; /* Espaço entre o input e o botão */
+    padding: 0 15px; /* Espaçamento lateral */
+}}
+
+/* Remove o label (título) do st.text_input */
+.fixed-input-inner div[data-testid="stTextInput"] label {{
+    display: none;
+}}
+
+/* Estiliza o st.text_input com BORDAS SUAVES */
+.fixed-input-inner div[data-testid="stTextInput"] > div {{
+    border-radius: 25px !important; /* Bordas suaves */
+    background-color: var(--fundo); /* Cor de fundo da caixa de chat */
+}}
+
+/* Contêiner do botão de áudio */
+.fixed-input-inner .stButton {{
+    max-height: 50px; /* Impede que o botão estique */
+}}
+
+/* Hack para o iframe do audio_recorder */
+.fixed-input-inner iframe {{
+    transform: scale(0.9); /* Ícone um pouco menor */
+    height: 50px !important; /* Impede que estique */
+    width: 50px !important;
+    margin-top: -10px; /* Ajuste fino de alinhamento */
+    border: none; /* Remove borda do iframe */
+    background: transparent; /* Fundo transparente */
+}}
+
+/* Esconde a barra preta feia do audio_recorder */
+.fixed-input-inner iframe html body {{
+    background: transparent !important;
+}}
+/* --- FIM DO NOVO CÓDIGO --- */
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -919,6 +924,7 @@ if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_b
 
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
