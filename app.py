@@ -1,8 +1,8 @@
 # app.py — Conecta Senac • Aprendiz
-# Versão Final (SQLite, Foco Senac, UI Limpa, Modo Escuro e STT integrados)
+# Versão Final e Limpa (Sem DB, Foco Total no Microfone e UI)
 # ----------------------------------------------------------------------
 # Dependências: streamlit, openai, tavily-python, ddgs, streamlit-mic-recorder
-# Persistência: Histórico e Contatos salvos em conecta_senac.db (SQLite).
+# Persistência: Apenas via st.session_state (conversas não persistem após reinício).
 # ----------------------------------------------------------------------
 
 import os
@@ -10,7 +10,6 @@ import re
 import json
 import base64
 import unicodedata
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
@@ -19,13 +18,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # =========================
-# CONFIG / ASSETS / DB (SQLITE)
+# CONFIG / ASSETS
 # =========================
 APP_TITLE = "Conecta Senac — Aprendiz"
 ASSETS_DIR = os.path.dirname(os.path.abspath(__file__))
 AVATAR_DIR = ASSETS_DIR
 OUTBOX_DIR = Path("respostas")
-DB_FILE = "conecta_senac.db" # Arquivo do banco de dados SQLite
 
 def ensure_dir(p: Path) -> None:
     try:
@@ -34,83 +32,6 @@ def ensure_dir(p: Path) -> None:
         pass
 
 ensure_dir(OUTBOX_DIR)
-
-# --- Funções de Banco de Dados SQLite ---
-def init_db(db_path: str) -> None:
-    """Cria as tabelas de histórico e contatos se não existirem."""
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Tabela 1: Histórico de Conversa
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                speaker TEXT NOT NULL,
-                message TEXT NOT NULL,
-                emotion TEXT,
-                sources_json TEXT
-            )
-        """)
-        
-        # Tabela 2: Contatos Capturados (Leads)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS contacts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                capture_time TEXT NOT NULL,
-                name TEXT,
-                email TEXT UNIQUE NOT NULL,
-                raw_message TEXT
-            )
-        """)
-        
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Erro ao inicializar o banco de dados: {e}")
-
-def save_message_to_db(db_path: str, who: str, msg: str, emo: Optional[str] = None, fontes: Optional[list] = None) -> None:
-    """Salva uma mensagem individual no histórico."""
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        timestamp = datetime.now().isoformat()
-        sources_str = json.dumps(fontes or [])
-
-        cursor.execute(
-            "INSERT INTO history (timestamp, speaker, message, emotion, sources_json) VALUES (?, ?, ?, ?, ?)",
-            (timestamp, who, msg, emo, sources_str)
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Erro ao salvar mensagem no DB: {e}")
-
-def save_contact_to_db(db_path: str, name: str, email: str, raw_message: str) -> bool:
-    """Salva um novo contato no banco de dados. Retorna True se salvo, False se já existe."""
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        capture_time = datetime.now().isoformat()
-        
-        cursor.execute(
-            "INSERT INTO contacts (capture_time, name, email, raw_message) VALUES (?, ?, ?, ?)",
-            (capture_time, name, email.lower(), raw_message)
-        )
-        conn.commit()
-        conn.close()
-        return True
-    except sqlite3.IntegrityError:
-        # Se o e-mail já existir
-        return False 
-    except Exception as e:
-        print(f"Erro ao salvar contato no DB: {e}")
-        return False
-
-# Inicializa o banco de dados ao iniciar o app
-init_db(DB_FILE)
-# --- Fim Funções de Banco de Dados ---
 
 def _first_existing(*paths: str) -> Optional[str]:
     for p in paths:
@@ -143,7 +64,6 @@ def _get_secret(*keys, default: str = "") -> str:
             cur = cur[k]
         return str(cur).strip()
     except Exception:
-        # Fallback para variáveis de ambiente se não estiver no Streamlit Cloud ou secrets.toml
         return os.getenv("_".join(keys).upper()) or default
 
 # =========================
@@ -159,7 +79,6 @@ if API_KEY:
         from openai import OpenAI
         llm_client = OpenAI(api_key=API_KEY)
     except Exception as e:
-        # Erro na sidebar se a chave estiver ruim ou o pacote faltar
         pass 
 
 try:
@@ -175,7 +94,7 @@ try:
     HAS_STT = True
 except Exception:
     HAS_STT = False
-
+    
 # =========================
 # ESTADO
 # =========================
@@ -247,9 +166,10 @@ with st.sidebar:
     st.caption(f"LLM: {'OpenAI' if llm_client else '⚠️ não configurado'}")
     st.caption(f"Busca: {'Tavily' if TAVILY_KEY else ('DDGS' if DDGS else '⚠️ indisponível')}")
     
-    # A ÚNICA DICA DE INSTALAÇÃO DO MICROFONE ESTÁ AQUI
+    # Adiciona diagnóstico e instrução
+    st.caption(f"Status do STT: {'Sucesso' if HAS_STT else 'FALHA (Sem microfone)'}")
     if st.session_state.stt_enabled and not HAS_STT:
-        st.info("Para microfone no Cloud: adicione 'streamlit-mic-recorder' ao requirements.txt.")
+        st.error("Para ativar o microfone, adicione 'streamlit-mic-recorder' ao requirements.txt e reinicie o app.")
 
 # =========================
 # TEMA / CSS (FUNDO CORRIGIDO)
@@ -326,7 +246,7 @@ SUGESTOES = [
 cols = st.columns(len(SUGESTOES))
 for i, texto in enumerate(SUGESTOES):
     if cols[i].button(texto, use_container_width=True):
-        save_message_to_db(DB_FILE, "user", texto)
+        # Nenhuma chamada save_message_to_db aqui
         st.session_state.hist.append(("user", texto, None, None))
         st.session_state.hist.append(("typing", "digitando...", "pensando", None))
         _rerun()
@@ -490,7 +410,9 @@ def gerar_resposta_json(pergunta: str, temperature: float):
     pl = p.lower()
     fontes: list = []
     msgs = _last_msgs()
-
+    
+    # OBS: REMOVEMOS AS FUNÇÕES DE DB, MAS MANTEMOS A LÓGICA DE CAPTURA DE LEAD NA IA
+    
     # --- BLOCO 1: CAPTURA DE CONTATO (LEAD) ---
     if st.session_state.awaiting_contact:
         st.session_state.awaiting_contact = False
@@ -501,17 +423,17 @@ def gerar_resposta_json(pergunta: str, temperature: float):
             name_part = p[:m_email.start()].strip()
             name = name_part.split()[-1].title() if name_part else "Interessado"
             
-            if save_contact_to_db(DB_FILE, name, email, p):
-                return {"emotion": "feliz", "content": f"Perfeito, **{name}**! O e-mail **{email}** foi salvo e a equipe Senac entrará em contato em breve. Enquanto isso, mais alguma dúvida sobre nossos cursos?"}, []
-            else:
-                return {"emotion": "neutro", "content": f"O e-mail **{email}** já está registrado. A equipe Senac entrará em contato. Qual curso te interessa agora?"}, []
+            # NOTA: Nenhuma chamada a save_contact_to_db aqui
+            
+            # Resposta simulada de salvamento
+            return {"emotion": "feliz", "content": f"Perfeito, **{name}**! O e-mail **{email}** foi processado. A equipe Senac entrará em contato em breve. Enquanto isso, mais alguma dúvida sobre nossos cursos?"}, []
         else:
             return {"emotion": "duvida", "content": "Não consegui identificar seu e-mail. Por favor, digite seu **NOME** e **E-MAIL** para contato, ou diga 'Não' se não quiser prosseguir."}, []
     
     # --- BLOCO 2: INÍCIO DA CAPTURA (GATILHO) ---
     if any(k in pl for k in ["quero me inscrever", "proximo passo", "como me inscrevo", "gostei e quero mais", "quero começar"]):
         st.session_state.awaiting_contact = True
-        return {"emotion": "feliz", "content": "Excelente! Posso te ajudar com o processo. Para agilizar seu atendimento com um consultor do Senac, você me autoriza a registrar seu nome e e-mail no nosso banco de dados?"}, []
+        return {"emotion": "feliz", "content": "Excelente! Posso te ajudar com o processo. Para agilizar seu atendimento com um consultor do Senac, você me autoriza a registrar seu nome e e-mail?"}, []
 
     # --- BLOCO 3: LOCALIZAÇÃO DE UNIDADE (SE NECESSÁRIO) ---
     if any(tok in pl for tok in ["onde fica","endereço","endereco","unidade","unidades","localização","localizacao","perto de mim"]):
@@ -620,7 +542,7 @@ def text_to_speech_component(text: str):
     """, height=0)
 
 # =========================
-# PROCESSAR "typing" (SALVA NO DB)
+# PROCESSAR "typing"
 # =========================
 if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
     pergunta = ""
@@ -637,8 +559,7 @@ if st.session_state.hist and st.session_state.hist[-1][0] == "typing":
     valid_emotions = ["feliz", "neutro", "pensando", "triste", "duvida"]
     final_emotion = emotion if emotion in valid_emotions else "feliz"
 
-    # Salva a mensagem do BOT no DB
-    save_message_to_db(DB_FILE, "bot", final_content, final_emotion, fontes)
+    # Nenhuma chamada save_message_to_db aqui
     
     try:
         _ = _save_json({"emotion": final_emotion, "content": final_content}, fontes)
@@ -661,7 +582,7 @@ mic_txt: Optional[str] = None
 c_mic, c_hint = st.columns([0.18, 0.82])
 
 with c_mic:
-    # Apenas exibe o botão se STT estiver ativado E o pacote instalado
+    # Apenas exibe o botão se STT estiver ativado E o pacote instalado (HAS_STT=True)
     if st.session_state.stt_enabled and HAS_STT:
         mic_txt = speech_to_text(
             language="pt-BR",
@@ -671,10 +592,9 @@ with c_mic:
             use_container_width=True,
             key="stt_inline_top",
         )
-    # Nenhuma mensagem de "microfone off" ou instalação é exibida aqui.
+    # Se HAS_STT for False, NADA é exibido aqui (UI limpa).
 
 with c_hint:
-    # Removemos qualquer dica para limpar o espaço.
     pass 
 
 user_msg = st.chat_input("Digite sua mensagem…")
@@ -686,8 +606,7 @@ elif user_msg and user_msg.strip():
     msg = user_msg.strip()
 
 if msg:
-    # Salva a mensagem do usuário no DB
-    save_message_to_db(DB_FILE, "user", msg) 
+    # Nenhuma chamada save_message_to_db aqui
     
     st.session_state.hist.append(("user", msg, None, None))
     st.session_state.hist.append(("typing", "digitando...", "pensando", None))
