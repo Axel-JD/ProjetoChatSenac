@@ -624,15 +624,21 @@ for who, msg, emo, fontes in st.session_state.hist:
             unsafe_allow_html=True
         )
         
-        # --- INÍCIO DA MUDANÇA ---
-        # Só mostre a lista de links brutos se a IA já não tiver
-        # formatado um link de notícia dentro da própria mensagem.
-        # Isso evita links duplicados e irrelevantes.
-        if fontes and not re.search(r'\[.*?\]\(http.*?\)', msg):
+        # --- LÓGICA INTELIGENTE DE LINKS ---
+        # 1. Verifica se a IA já formatou um link de notícia (ex: [Título](http...))
+        #    dentro da própria mensagem.
+        is_news_response = re.search(r'\[.*?\]\(http.*?\)', msg)
+        
+        # 2. Só mostre a lista de links se:
+        #    a) Houver fontes E
+        #    b) NÃO for uma resposta de notícia (para esconder links "lixo" como
+        #       Trump, Enem, etc.)
+        if fontes and not is_news_response:
+            # Isso agora SÓ vai rodar para perguntas "Padrão" (cursos, etc.)
             links = "".join([f"<li><a href='{f.get('url','')}' target='_blank'>{f.get('title','Fonte')}</a></li>" for f in fontes if f.get('url')])
             if links:
                 st.markdown(f"<ul class='link-list' style='margin:6px 0 10px 50px'>{links}</ul>", unsafe_allow_html=True)
-        # --- FIM DA MUDANÇA ---
+        # --- FIM DA LÓGICA ---
 
 st.markdown("</div>", unsafe_allow_html=True)
 components.html("<script>const box=parent.document.querySelector('#chat'); if(box){box.scrollTop=box.scrollHeight;}</script>", height=0)
@@ -778,6 +784,7 @@ if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_b
 
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
