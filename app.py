@@ -1,14 +1,8 @@
 # app.py — Conecta Senac • Aprendiz
 # Versão Final (SQLite, Foco Senac, UI Limpa, Modo Escuro e STT integrados)
 # ----------------------------------------------------------------------
-# Dependências: Streamlit, openai, tavily-python, ddgs, streamlit-mic-recorder
+# Dependências: streamlit, openai, tavily-python, ddgs, streamlit-mic-recorder
 # Persistência: Histórico e Contatos salvos em conecta_senac.db (SQLite).
-# Foco: LLM é forçado a conectar perguntas off-topic ao Senac.
-# UI: Botão de microfone integrado.# =========================
-# DIAGNÓSTICO TEMPORÁRIO
-# =========================
-if not HAS_STT:
-    st.error("Diagnóstico: HAS_STT é FALSO. A importação da biblioteca falhou, mesmo se instalada.")
 # ----------------------------------------------------------------------
 
 import os
@@ -149,6 +143,7 @@ def _get_secret(*keys, default: str = "") -> str:
             cur = cur[k]
         return str(cur).strip()
     except Exception:
+        # Fallback para variáveis de ambiente se não estiver no Streamlit Cloud ou secrets.toml
         return os.getenv("_".join(keys).upper()) or default
 
 # =========================
@@ -164,8 +159,8 @@ if API_KEY:
         from openai import OpenAI
         llm_client = OpenAI(api_key=API_KEY)
     except Exception as e:
-        st.sidebar.error("Pacote 'openai' ausente/incompatível ou chave inválida.")
-        st.sidebar.caption(f"Detalhe técnico: {e!r}")
+        # Erro na sidebar se a chave estiver ruim ou o pacote faltar
+        pass 
 
 try:
     from ddgs import DDGS
@@ -251,7 +246,8 @@ with st.sidebar:
     web_toggle = st.toggle("🔎 Ativar pesquisa web quando fizer sentido", value=True)
     st.caption(f"LLM: {'OpenAI' if llm_client else '⚠️ não configurado'}")
     st.caption(f"Busca: {'Tavily' if TAVILY_KEY else ('DDGS' if DDGS else '⚠️ indisponível')}")
-    # ÚNICA INFORMAÇÃO DE INSTALAÇÃO DO MICROFONE FICA AQUI
+    
+    # A ÚNICA DICA DE INSTALAÇÃO DO MICROFONE ESTÁ AQUI
     if st.session_state.stt_enabled and not HAS_STT:
         st.info("Para microfone no Cloud: adicione 'streamlit-mic-recorder' ao requirements.txt.")
 
@@ -708,4 +704,3 @@ if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_b
 
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
-
