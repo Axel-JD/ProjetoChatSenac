@@ -2,8 +2,8 @@
 # Versão Final Completa e Otimizada
 # ----------------------------------------------------------------------
 # Recursos: STT/Voz, Foco Senac, Leitura de Notícias (Trafilatura),
-# Filtros de Relevância e Data, UI de Chat Otimizada, Barra de Input Fixa e Estilizada.
-# CORREÇÃO: CSS para botões de sugestão com altura igual.
+# Filtros de Relevância e Data, UI de Chat Otimizada.
+# CORREÇÃO: Barra de Input Fixa com 3 botões (Texto, Voz, Limpar) e fundo escuro.
 # ----------------------------------------------------------------------
 
 import os
@@ -200,16 +200,18 @@ if DARK:
     COR_USER = "#1e40af"; COR_USER_TXT = "#e5e7eb" # Texto do usuário (Branco no modo escuro)
     COR_BOT = "#F47920"; COR_BOT_TXT = "#111827"
     COR_LINK = "#93c5fd"; HEADER_GRAD_1, HEADER_GRAD_2 = "#0e4e9b", "#2567c4"
-    # Cor das Sugestões
     COR_SUG_BG = COR_USER; COR_SUG_TXT = COR_USER_TXT;
+    # --- MUDANÇA: Fundo da Barra ---
+    COR_BARRA_FUNDO = COR_BG2 # Escuro
 else:
     COR_BG1, COR_BG2 = "#fbfdff", "#eef3fb"
     COR_FUNDO = "#F7F9FC"; COR_BORDA = "#0E4E9B"
     COR_USER = "#0E4E9B"; COR_USER_TXT = "#111827" # Texto do usuário (Preto no modo claro)
     COR_BOT = "#F47920"; COR_BOT_TXT = "#FFFFFF"
     COR_LINK = "#0A66C2"; HEADER_GRAD_1, HEADER_GRAD_2 = "#0e4e9b", "#2567c4"
-    # Cor das Sugestões
     COR_SUG_BG = COR_USER; COR_SUG_TXT = COR_USER_TXT;
+    # --- MUDANÇA: Fundo da Barra ---
+    COR_BARRA_FUNDO = "#E5E7EB" # Cinza (Mais escuro que a página)
 
 BASE_FONT_SIZE_REM = 0.985
 dynamic_font_size = BASE_FONT_SIZE_REM * st.session_state.font_size
@@ -221,6 +223,7 @@ st.markdown(f"""
   --user:{COR_USER}; --userTxt:{COR_USER_TXT}; --bot:{COR_BOT}; --botTxt:{COR_BOT_TXT};
   --link:{COR_LINK}; --h1:{HEADER_GRAD_1}; --h2:{HEADER_GRAD_2};
   --sugBg:{COR_SUG_BG}; --sugTxt:{COR_SUG_TXT};
+  --barraFundo:{COR_BARRA_FUNDO};
 }}
 * {{ box-sizing: border-box; }}
 
@@ -250,7 +253,7 @@ body {{ background-color: var(--bg2); }}
 a {{ color:var(--link); text-decoration:none; }} a:hover {{ text-decoration:underline; }}
 
 
-/* --- INÍCIO DA MUDANÇA: SUGESTÕES RÁPIDAS (COM ALTURA IGUAL) --- */
+/* --- SUGESTÕES RÁPIDAS (COM ALTURA IGUAL) --- */
 .sugestoes {{
     margin-top: 10px;
 }}
@@ -260,16 +263,13 @@ a {{ color:var(--link); text-decoration:none; }} a:hover {{ text-decoration:unde
     margin-bottom: 6px;
     font-size: 1rem;
 }}
-/* 1. Faz o contêiner das colunas esticar os filhos */
 .sugestoes div[data-testid="stHorizontalBlock"] {{
     display: flex;
     align-items: stretch; /* Faz todas as colunas terem a mesma altura */
 }}
-/* 2. Faz o contêiner do botão preencher a coluna */
 .sugestoes div[data-testid="stButton"] {{
     height: 100%; 
 }}
-/* 3. Estiliza o botão para preencher o contêiner e parecer o chat do usuário */
 div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button {{
     background-color: var(--sugBg);
     color: var(--sugTxt);
@@ -290,7 +290,7 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button:hover {{
     opacity: 0.85; 
     border: 1px solid var(--sugBg);
 }}
-/* --- FIM DA MUDANÇA: SUGESTÕES --- */
+/* --- FIM SUGESTÕES --- */
 
 
 /* --- INÍCIO DO CÓDIGO DA BARRA FIXA --- */
@@ -305,7 +305,7 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button:hover {{
     bottom: 0;
     left: 0;
     width: 100%;
-    background-color: var(--bg2); /* Usa a cor de fundo do tema */
+    background-color: var(--barraFundo); /* --- MUDANÇA: Fundo mais escuro --- */
     border-top: 1px solid var(--borda);
     padding: 12px 0px; /* Espaçamento vertical */
     z-index: 999;
@@ -317,7 +317,7 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button:hover {{
     max-width: 900px; /* Mesma largura do .wrap */
     display: flex;
     align-items: center; /* Alinha o input e o botão verticalmente */
-    gap: 10px; /* Espaço entre o input e o botão */
+    gap: 8px; /* --- MUDANÇA: Espaço reduzido --- */
     padding: 0 15px; /* Espaçamento lateral */
 }}
 /* Remove o label (título) do st.text_input */
@@ -335,7 +335,7 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button:hover {{
 }}
 /* Cor do texto digitado */
 .fixed-input-inner div[data-testid="stTextInput"] input {{
-    color: var(--botTxt); /* Usa a cor do texto do bot (preto ou branco) */
+    color: var(--botTxt); 
 }}
 /* Hack para o iframe do audio_recorder */
 .fixed-input-inner iframe {{
@@ -349,6 +349,24 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button:hover {{
 /* Esconde a barra preta feia do audio_recorder */
 .fixed-input-inner iframe html body {{
     background: transparent !important;
+}}
+/* --- MUDANÇA: Estiliza o botão "Limpar conversa" (agora 🧹) na barra --- */
+.fixed-input-inner div[data-testid="stButton"] button[kind="secondary"] {{
+    background-color: var(--fundo);
+    color: var(--botTxt);
+    border: 1px solid var(--borda);
+    border-radius: 50% !important; /* Botão redondo */
+    height: 48px;
+    width: 48px;
+    font-size: 1.1rem;
+    padding: 0;
+    margin-top: -10px; /* Alinhamento vertical */
+    margin-left: 2px; /* Pequeno espaço */
+}}
+.fixed-input-inner div[data-testid="stButton"] button[kind="secondary"]:hover {{
+    opacity: 0.8;
+    border: 1px solid var(--borda);
+    color: var(--botTxt);
 }}
 /* --- FIM DO CÓDIGO DA BARRA FIXA --- */
 
@@ -837,8 +855,8 @@ user_msg: Optional[str] = None
 # Inicia o contêiner fixo
 st.markdown("<div class='fixed-input-container'><div class='fixed-input-inner'>", unsafe_allow_html=True)
 
-# Define as colunas (85% para texto, 15% para botão)
-col1, col2 = st.columns([0.85, 0.15])
+# --- MUDANÇA: Layout de 3 colunas ---
+col1, col2, col3 = st.columns([0.75, 0.125, 0.125]) # 75% Texto, 12.5% Voz, 12.5% Limpar
 
 with col1:
     # 1. st.text_input para a barra com bordas suaves
@@ -851,7 +869,6 @@ with col1:
 with col2:
     # 2. Botão de áudio
     if st.session_state.stt_enabled and HAS_STT:
-        # Usamos st.container para aplicar o CSS corretamente
         with st.container():
             audio_bytes = audio_recorder(
                 text="", 
@@ -862,6 +879,18 @@ with col2:
             )
     else:
         st.write("") # Espaço reservado
+
+# --- MUDANÇA: Botão Limpar movido para a barra ---
+with col3:
+    # 3. Botão de Limpar Conversa
+    if st.button("🧹", key="clear_chat_bottom_bar", use_container_width=True):
+        st.session_state.hist = [("bot", "Conversa limpa! Quer falar sobre cursos, inscrição, EAD, unidades ou conhecer melhor o Aprendiz? 🙂", "feliz", None)]
+        st.session_state.awaiting_location = False
+        st.session_state.awaiting_contact = False
+        if "chat_text_input" in st.session_state:
+            st.session_state.chat_text_input = "" 
+        _rerun()
+# --- FIM DA MUDANÇA ---
 
 # Fecha os contêineres
 st.markdown("</div></div>", unsafe_allow_html=True)
@@ -920,11 +949,9 @@ if msg_to_process:
 # =========================
 # RODAPÉ - LIMPO
 # =========================
-if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_bottom"):
-    st.session_state.hist = [("bot", "Conversa limpa! Quer falar sobre cursos, inscrição, EAD, unidades ou conhecer melhor o Aprendiz? 🙂", "feliz", None)]
-    st.session_state.awaiting_location = False
-    st.session_state.awaiting_contact = False
-    _rerun()
+# --- MUDANÇA: O botão de limpar foi movido para a barra de entrada ---
+# st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_bottom") # <- REMOVIDO
+# --- FIM DA MUDANÇA ---
 
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
