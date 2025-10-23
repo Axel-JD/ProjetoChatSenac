@@ -1,5 +1,6 @@
+# NOVO REQUIREMENTS.TXT (Versão mais simples)
 streamlit>=1.34
 openai>=1.30
 tavily-python>=0.3
 ddgs>=2.3.2
-streamlit-mic-recorder>=0.0.8
+streamlit-mic-recorder
