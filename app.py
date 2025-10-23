@@ -109,7 +109,6 @@ except Exception:
     requests = None
     fetch_url = None
     extract = None
-# *** FIM DA MUDANÇA ***
     
 # =========================
 # ESTADO
@@ -190,7 +189,6 @@ with st.sidebar:
     # *** NOVO: Diagnóstico do Scraper ***
     if web_toggle and not HAS_SCRAPER:
         st.warning("Libs 'requests' ou 'trafilatura' não econtradas. A leitura de artigos está desativada. Verifique o requirements.txt.")
-    # *** FIM DA MUDANÇA ***
 
 # =========================
 # TEMA / CSS (FUNDO CORRIGIDO)
@@ -345,7 +343,6 @@ def web_search(query: str, max_results: int = 6):
                 search_depth="basic",
                 time_range=tavily_time_range # <--- PARÂMETRO ADICIONADO
             )
-            # --- FIM DA MUDANÇA (Parte 2) ---
 
             if isinstance(res, dict) and res.get("results"):
                 return [{"title": r.get("title"), "url": r.get("url"), "content": r.get("content")} for r in res["results"]]
@@ -398,11 +395,46 @@ def scrape_article_text(url: str) -> Optional[str]:
 # *** NOVO: Função principal para buscar E ler artigos ***
 @st.cache_data(ttl=3600, show_spinner=False)
 def search_and_read_articles(query: str, max_results: int = 4):
-    """Busca na web (básico) e depois tenta 'ler' cada resultado."""
+    """Busca na web, FILTRA, e depois tenta 'ler' cada resultado."""
+    
     # 1. Busca básica (links e snippets)
-    basic_results = web_search(query, max_results)
+    # Pede 2 resultados a mais para ter uma margem para o filtro
+    basic_results = web_search(query, max_results + 2) 
     if not basic_results:
         return []
+        
+    # 2. Filtra os resultados para garantir que sejam sobre "Senac"
+    filtered_results = []
+    for r in basic_results:
+        title = (r.get("title") or "").lower()
+        url = (r.get("url") or "").lower()
+        
+        # Só mantém o resultado se "senac" estiver no título ou na URL
+        # Isso remove resultados como "Senado", "Sena" (rio), etc.
+        if "senac" in title or "senac" in url:
+            filtered_results.append(r)
+    
+    # Se o filtro removeu tudo, retorne vazio
+    if not filtered_results:
+        return []
+    # --- FIM DA MUDANÇA (Parte 1) ---
+
+    # 3. Tenta ler cada URL FILTRADA
+    advanced_results = []
+    # Itera sobre 'filtered_results' e limita aos 'max_results' originais
+    for r in filtered_results[:max_results]: 
+        snippet = r.get("content") or ""
+        url = r.get("url")
+        full_content = scrape_article_text(url)
+        
+        final_content = full_content if (full_content and len(full_content) > len(snippet) * 1.5) else snippet
+        
+        advanced_results.append({
+            "title": r.get("title"),
+            "url": url,
+            "content": final_content
+        })
+    return advanced_results
         
     # 2. Tenta ler cada URL
     advanced_results = []
@@ -420,7 +452,6 @@ def search_and_read_articles(query: str, max_results: int = 4):
             "content": final_content
         })
     return advanced_results
-# *** FIM DAS MUDANÇAS ***
 
 # =========================
 # PROMPTS / LLM (sempre JSON)
@@ -806,6 +837,7 @@ if st.button("🧹 Limpar conversa", use_container_width=True, key="clear_chat_b
 
 st.markdown("<div style='text-align: center; margin-top: 10px; font-size: 0.8rem; color: #888;'>Aprendiz — conversa natural, foco no Senac e no que importa pra você.</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
